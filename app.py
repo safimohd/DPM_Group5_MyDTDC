@@ -6,7 +6,6 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -57,35 +56,12 @@ def get_secret(name):
     except (FileNotFoundError, st.errors.StreamlitSecretNotFoundError):
         return os.getenv(name, "")
 
-def reverse_geocode(latitude, longitude):
-    """Turn device coordinates into editable address fields using Google Geocoding."""
-    api_key=get_secret("GOOGLE_MAPS_API_KEY")
-    if not api_key:
-        return None
-    try:
-        response=requests.get(
-            "https://maps.googleapis.com/maps/api/geocode/json",
-            params={"latlng":f"{latitude},{longitude}","key":api_key,"language":"en","region":"in"},
-            timeout=8,
-        )
-        response.raise_for_status()
-        payload=response.json()
-        if payload.get("status")!="OK" or not payload.get("results"):
-            return None
-        components_by_type={}
-        for component in payload["results"][0].get("address_components",[]):
-            for kind in component.get("types",[]):
-                components_by_type.setdefault(kind,component.get("long_name",""))
-        return {
-            "address_house":components_by_type.get("street_number",""),
-            "address_road":components_by_type.get("route", ""),
-            "address_area":components_by_type.get("sublocality_level_1") or components_by_type.get("neighborhood") or components_by_type.get("sublocality",""),
-            "address_city":components_by_type.get("locality") or components_by_type.get("postal_town") or components_by_type.get("administrative_area_level_3",""),
-            "address_state":components_by_type.get("administrative_area_level_1",""),
-            "address_pincode":components_by_type.get("postal_code",""),
-        }
-    except (requests.RequestException, ValueError, KeyError):
-        return None
+IIMB_PICKUP_ADDRESS = {
+    "address_house": "Main Gate", "address_road": "Bannerghatta Road",
+    "address_area": "IIM Bangalore, Bannerghatta Main Road",
+    "address_city": "Bengaluru", "address_state": "Karnataka",
+    "address_pincode": "560076",
+}
 
 @st.cache_resource()
 def db():
@@ -106,18 +82,17 @@ if "nav" not in st.session_state: st.session_state.nav = "Home"
 if "pending_nav" not in st.session_state: st.session_state.pending_nav = None
 if "location_refresh" not in st.session_state: st.session_state.location_refresh = 0
 if "pickup_requests_loaded" not in st.session_state: st.session_state.pickup_requests_loaded = False
+if "iimb_address_prefilled" not in st.session_state: st.session_state.iimb_address_prefilled = False
 for field in ("address_house","address_road","address_area","address_city","address_state","address_pincode"):
     if field not in st.session_state: st.session_state[field]=""
+if not st.session_state.iimb_address_prefilled:
+    for field,value in IIMB_PICKUP_ADDRESS.items():
+        if not st.session_state[field]: st.session_state[field]=value
+    st.session_state.iimb_address_prefilled=True
 if "pickup_call_requested" not in st.session_state: st.session_state.pickup_call_requested = set()
 geo = location_component(refresh=st.session_state.location_refresh, key="mydtdc_location_component", default=None)
-if isinstance(geo, dict) and geo.get("latitude") is not None and geo.get("longitude") is not None:
-    st.session_state.device_location = {"latitude": geo["latitude"], "longitude": geo["longitude"], "accuracy": geo.get("accuracy")}
-    location_signature=f"{geo['latitude']:.6f},{geo['longitude']:.6f}"
-    if st.session_state.get("geocoded_location_signature") != location_signature:
-        found_address=reverse_geocode(geo["latitude"],geo["longitude"])
-        if found_address:
-            for field,value in found_address.items(): st.session_state[field]=value
-        st.session_state.geocoded_location_signature=location_signature
+if isinstance(geo, dict) and geo.get("permission") == "granted":
+    st.session_state.location_permission_granted=True
 client = db()
 backend = "Supabase connected" if client else "Demo mode · session data"
 st.markdown(f"<div class='brandbar'><div class='brand'><div class='brandmark'>D</div><div><div class='brandname'>MyDTDC</div><div class='brandtag'>Ship with confidence</div></div></div><div class='demo-pill'>{backend}</div></div>",unsafe_allow_html=True)
@@ -238,26 +213,19 @@ elif selected=="Book a Pickup":
     left,right=st.columns([1.35,.8])
     with left:
         geo_error=geo.get("error") if isinstance(geo,dict) else None
-        if geo_error and geo_error!="Location permission was declined.": st.caption(geo_error)
-        if st.session_state.get("device_location"):
-            coords=st.session_state.device_location
-            if get_secret("GOOGLE_MAPS_API_KEY"):
-                st.caption(f"Current location detected (±{coords.get('accuracy',0):.0f} m). Address fields were filled where map data is available; verify and edit them.")
-            else:
-                st.caption("Current coordinates detected. Add GOOGLE_MAPS_API_KEY in Streamlit Secrets to auto-fill the address, or enter it below.")
+        if geo_error: st.caption(geo_error)
+        if st.session_state.get("location_permission_granted"):
+            st.caption("Location permission granted. For this presentation demo, the pickup address is prefilled as IIM Bangalore; please review or edit it.")
         else:
-            st.caption("Allow location access to start with your current address, or enter the address manually.")
-        if st.button("↻  Use my current location",key="refresh_pickup_location"):
+            st.caption("The pickup address is prefilled as IIM Bangalore for this presentation demo. Allow location access when your browser asks; you can still edit every address field.")
+        if st.button("↻  Request location permission",key="refresh_pickup_location"):
             st.session_state.location_refresh+=1
             st.rerun()
         with st.form("pickup_form"):
             st.markdown("**Pickup details**")
             c1,c2=st.columns(2);name=c1.text_input("Your name",placeholder="Full name");phone=c2.text_input("Mobile number",placeholder="10-digit mobile")
             st.markdown("**Pickup address**")
-            if get_secret("GOOGLE_MAPS_API_KEY"):
-                st.caption("Your location is used to suggest these address parts. Review and correct them before booking. Address lookup by Google Maps.")
-            else:
-                st.caption("Address parts are editable. Add GOOGLE_MAPS_API_KEY in Streamlit Secrets to auto-fill them from your detected location.")
+            st.caption("Presentation demo default: Indian Institute of Management Bangalore. Device coordinates are not used or saved; edit any field if needed.")
             address_c1,address_c2=st.columns(2)
             house=address_c1.text_input("House / flat number",key="address_house",placeholder="e.g. H305")
             road=address_c2.text_input("Road / street",key="address_road",placeholder="Street or road name")
@@ -291,14 +259,13 @@ elif selected=="Book a Pickup":
                 if saved_photo:
                     import base64
                     photo_data=base64.b64encode(saved_photo.getvalue()).decode("ascii")
-                coords=st.session_state.get("device_location",{})
-                record={"booking_id":"PU"+uuid.uuid4().hex[:8].upper(),"sender_name":name,"phone":phone,"pickup_address":address,"house_number":house,"road":road,"area":area,"city":city,"state":state,"pincode":pincode,"collector_name":collector_name,"collector_phone":collector_phone,"pickup_latitude":coords.get("latitude"),"pickup_longitude":coords.get("longitude"),"location_accuracy":coords.get("accuracy"),"photo_data":photo_data,"pickup_date":pickup_date.isoformat(),"time_slot":slot,"contents":contents,"weight":weight,"priority":priority,"note":note,"status":"Pickup request received","created_at":datetime.now().isoformat()}
+                record={"booking_id":"PU"+uuid.uuid4().hex[:8].upper(),"sender_name":name,"phone":phone,"pickup_address":address,"house_number":house,"road":road,"area":area,"city":city,"state":state,"pincode":pincode,"collector_name":collector_name,"collector_phone":collector_phone,"pickup_latitude":None,"pickup_longitude":None,"photo_data":photo_data,"pickup_date":pickup_date.isoformat(),"time_slot":slot,"contents":contents,"weight":weight,"priority":priority,"note":note,"status":"Pickup request received","created_at":datetime.now().isoformat()}
                 save_pickup(record);st.session_state.last_pickup=record;st.success(f"Pickup requested! Booking number: {record['booking_id']}.")
                 st.info(f"{pickup_date.strftime('%d %b %Y')} · {slot} · {'Priority pickup requested' if priority else 'Standard pickup'}")
                 st.session_state.pending_nav="My Pickups"
                 st.rerun()
     with right:
-        st.markdown("<div class='card'><div class='card-title'>Pickup, made clearer</div><div class='card-sub'>A simple flow from request to collection.</div><div class='feature-note'>✓ Start with your device location<br><br>✓ Choose an address and pickup slot<br><br>✓ Add a photo or landmark<br><br>✓ Share who will hand over the parcel<br><br>✓ Follow progress in My Pickups</div></div>",unsafe_allow_html=True)
+        st.markdown("<div class='card'><div class='card-title'>Pickup, made clearer</div><div class='card-sub'>A simple flow from request to collection.</div><div class='feature-note'>✓ Start with IIM Bangalore as the demo address<br><br>✓ Edit house/gate, road, area and PIN<br><br>✓ Add a photo or landmark<br><br>✓ Share who will hand over the parcel<br><br>✓ Follow progress in My Pickups</div></div>",unsafe_allow_html=True)
         if st.session_state.get("last_pickup"):
             p=st.session_state.last_pickup;st.markdown(f"<div class='card'><div class='card-title'>Latest pickup</div><b>{p['booking_id']}</b><p><span class='status status-warn'>{p['status']}</span></p><small>{p['pickup_date']} · {p['time_slot']}</small></div>",unsafe_allow_html=True)
 
