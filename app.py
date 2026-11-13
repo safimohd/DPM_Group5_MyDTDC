@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import json
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -55,6 +57,36 @@ def get_secret(name):
     except (FileNotFoundError, st.errors.StreamlitSecretNotFoundError):
         return os.getenv(name, "")
 
+def reverse_geocode(latitude, longitude):
+    """Turn device coordinates into editable address fields using Google Geocoding."""
+    api_key=get_secret("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        return None
+    try:
+        response=requests.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"latlng":f"{latitude},{longitude}","key":api_key,"language":"en","region":"in"},
+            timeout=8,
+        )
+        response.raise_for_status()
+        payload=response.json()
+        if payload.get("status")!="OK" or not payload.get("results"):
+            return None
+        components_by_type={}
+        for component in payload["results"][0].get("address_components",[]):
+            for kind in component.get("types",[]):
+                components_by_type.setdefault(kind,component.get("long_name",""))
+        return {
+            "address_house":components_by_type.get("street_number",""),
+            "address_road":components_by_type.get("route", ""),
+            "address_area":components_by_type.get("sublocality_level_1") or components_by_type.get("neighborhood") or components_by_type.get("sublocality",""),
+            "address_city":components_by_type.get("locality") or components_by_type.get("postal_town") or components_by_type.get("administrative_area_level_3",""),
+            "address_state":components_by_type.get("administrative_area_level_1",""),
+            "address_pincode":components_by_type.get("postal_code",""),
+        }
+    except (requests.RequestException, ValueError, KeyError):
+        return None
+
 @st.cache_resource()
 def db():
     return get_db()
@@ -74,13 +106,18 @@ if "nav" not in st.session_state: st.session_state.nav = "Home"
 if "pending_nav" not in st.session_state: st.session_state.pending_nav = None
 if "location_refresh" not in st.session_state: st.session_state.location_refresh = 0
 if "pickup_requests_loaded" not in st.session_state: st.session_state.pickup_requests_loaded = False
-if "pickup_address" not in st.session_state: st.session_state.pickup_address = ""
+for field in ("address_house","address_road","address_area","address_city","address_state","address_pincode"):
+    if field not in st.session_state: st.session_state[field]=""
 if "pickup_call_requested" not in st.session_state: st.session_state.pickup_call_requested = set()
 geo = location_component(refresh=st.session_state.location_refresh, key="mydtdc_location_component", default=None)
 if isinstance(geo, dict) and geo.get("latitude") is not None and geo.get("longitude") is not None:
     st.session_state.device_location = {"latitude": geo["latitude"], "longitude": geo["longitude"], "accuracy": geo.get("accuracy")}
-    if not st.session_state.pickup_address:
-        st.session_state.pickup_address = f"Current device location ({geo['latitude']:.5f}, {geo['longitude']:.5f}) — please add street / PIN code"
+    location_signature=f"{geo['latitude']:.6f},{geo['longitude']:.6f}"
+    if st.session_state.get("geocoded_location_signature") != location_signature:
+        found_address=reverse_geocode(geo["latitude"],geo["longitude"])
+        if found_address:
+            for field,value in found_address.items(): st.session_state[field]=value
+        st.session_state.geocoded_location_signature=location_signature
 client = db()
 backend = "Supabase connected" if client else "Demo mode · session data"
 st.markdown(f"<div class='brandbar'><div class='brand'><div class='brandmark'>D</div><div><div class='brandname'>MyDTDC</div><div class='brandtag'>Ship with confidence</div></div></div><div class='demo-pill'>{backend}</div></div>",unsafe_allow_html=True)
@@ -108,20 +145,71 @@ def load_pickups():
             st.info(f"Showing pickup requests from this session. Could not load saved requests: {exc}")
         st.session_state.pickup_requests_loaded=True
 
-def support_answer(history, prompt):
+def support_answer(history, prompt, service, topic, context):
     api_key=get_secret("OPENAI_API_KEY")
     if not api_key or OpenAI is None:
-        return "The live support assistant is not connected yet. You can still create a support case below; for this demo I can guide you through pickup booking and shipment tracking."
+        return "AI replies are not connected yet. The quick-help topics above can guide you, or submit a support request below."
     try:
         client_ai=OpenAI(api_key=api_key, timeout=25.0, max_retries=1)
-        conversation=[{"role":"system","content":"You are MyDTDC support in a student concept prototype. Give concise, empathetic, practical answers about pickup booking, parcel tracking, ETAs and delivery issues. Never claim to access live DTDC systems or change a booking. Do not invent tracking events, prices, policies, phone numbers, or promises. If the user needs action or the answer is uncertain, offer the in-app support-case form. Explain that shown tracking data is sample/demo data. Do not ask for full payment details, passwords or OTPs."}]
+        instructions=(
+            "You are the MyDTDC in-app support assistant for a student concept prototype. "
+            "Answer the customer's specific question in a warm, concise, step-by-step way. "
+            "The current service and query topic are supplied as context. Use any supplied shipment or pickup record only as demo data. "
+            "You do not have access to DTDC production systems and cannot book, cancel, refund, change an address, or contact a delivery partner. "
+            "Never invent live tracking events, ETAs, prices, policies, or phone numbers. If information is missing, ask one focused follow-up question. "
+            "For cases needing an operational action or a policy answer not in the context, guide the user to the support request form. "
+            "Never request an OTP, password, or full payment details."
+        )
+        conversation=[{"role":"system","content":instructions}]
         conversation.extend({"role":role,"content":text} for role,text in history[-10:])
-        conversation.append({"role":"user","content":prompt})
+        user_content=f"Service: {service}\nHelp category: {topic}\nReference context: {context or 'No shipment or pickup record was attached.'}\nCustomer question: {prompt}"
+        conversation.append({"role":"user","content":user_content})
         response=client_ai.responses.create(model="gpt-5-nano",input=conversation,max_output_tokens=250)
         answer=(response.output_text or "I couldn't prepare a response. Please create a support case below.").strip()
         return answer
     except Exception as exc:
         return f"I couldn't reach the support assistant just now. Please try again or create a support case below. (Assistant error: {type(exc).__name__})"
+
+def support_record_context(reference):
+    reference=(reference or "").strip().upper()
+    if not reference:
+        return ""
+    shipment=st.session_state.shipments.get(reference)
+    if shipment:
+        return json.dumps({"kind":"sample shipment","consignment_no":reference,"status":shipment.get("status"),"eta":shipment.get("eta"),"updated":shipment.get("updated"),"origin":shipment.get("origin"),"destination":shipment.get("destination"),"events":shipment.get("events",[])},ensure_ascii=False)
+    pickup=next((p for p in st.session_state.pickup_requests if p.get("booking_id","").upper()==reference),None)
+    if pickup:
+        return json.dumps({"kind":"pickup request","booking_id":reference,"status":pickup.get("status"),"pickup_date":pickup.get("pickup_date"),"time_slot":pickup.get("time_slot")},ensure_ascii=False)
+    return f"No sample shipment or pickup record matches reference {reference}. Do not infer a status."
+
+SUPPORT_MENU={
+    "Local (Intracity)":{
+        "General Information":["General query","Service availability","Contact support"],
+        "Booking and Tracking":["Book a pickup","Shipment status","Update booking details"],
+        "Pricing and Payment":["Check charges","Payment methods","Payment and refund details"],
+        "Safety, Security and Support":["Report a delivery issue","On-field staff issue","Parcel safety"],
+        "Special Services & Business Solutions":["Business shipping","Special handling","Other services"],
+        "General Queries":["Shipment Status","Updating Order Details","Accepting Your Order","Managing Returns","Reporting Issues About Delivered Shipments","Payment and Refund Details","Service Related Queries","On Field Staff Issues"],
+    },
+    "National Courier":{
+        "General queries":["General query","Booking a shipment","Pickup service"],
+        "Shipment Status":["Track a shipment","Tracking has not updated","Estimated delivery"],
+        "Address and Contact Detail Update":["Change delivery address","Update contact details","Add delivery instructions"],
+        "Issue Reporting":["Marked delivered but not received","Delivery attempt did not happen","Report a parcel issue"],
+    },
+}
+
+SUPPORT_SUGGESTIONS={
+    "Shipment Status":["Where is my shipment?","My tracking has not updated. What can I check?","It says delivered but I have not received it."],
+    "Shipment status":["How do I track a shipment?","Why has tracking not updated?","It says delivered but I have not received it."],
+    "Book a pickup":["How do I schedule a pickup?","Where can I see my pickup booking?","How do I change my pickup time?"],
+    "Booking and Tracking":["How do I book a pickup?","How do I find my booking reference?","I cannot track my shipment."],
+    "Reporting Issues About Delivered Shipments":["My parcel is marked delivered, but I do not have it."],
+    "Issue Reporting":["My parcel is marked delivered, but I do not have it.","A delivery attempt did not happen.","I need to report a parcel issue."],
+    "Payment and Refund Details":["Where can I find payment or refund information?"],
+    "Pricing and Payment":["How can I check the price?","What payment options are available?","I need help with a refund."],
+    "Address and Contact Detail Update":["How can I update my delivery address?","Can I change the contact number?"],
+}
 
 def header(title,subtitle):
     st.markdown(f"<div class='card-title' style='font-size:23px'>{title}</div><div class='card-sub'>{subtitle}</div>",unsafe_allow_html=True)
@@ -153,14 +241,31 @@ elif selected=="Book a Pickup":
         if geo_error and geo_error!="Location permission was declined.": st.caption(geo_error)
         if st.session_state.get("device_location"):
             coords=st.session_state.device_location
-            st.caption(f"Current device location detected (±{coords.get('accuracy',0):.0f} m). Please confirm the street address and PIN code.")
+            if get_secret("GOOGLE_MAPS_API_KEY"):
+                st.caption(f"Current location detected (±{coords.get('accuracy',0):.0f} m). Address fields were filled where map data is available; verify and edit them.")
+            else:
+                st.caption("Current coordinates detected. Add GOOGLE_MAPS_API_KEY in Streamlit Secrets to auto-fill the address, or enter it below.")
+        else:
+            st.caption("Allow location access to start with your current address, or enter the address manually.")
         if st.button("↻  Use my current location",key="refresh_pickup_location"):
             st.session_state.location_refresh+=1
             st.rerun()
         with st.form("pickup_form"):
             st.markdown("**Pickup details**")
             c1,c2=st.columns(2);name=c1.text_input("Your name",placeholder="Full name");phone=c2.text_input("Mobile number",placeholder="10-digit mobile")
-            address=st.text_area("Pickup address (edit or complete your detected location)",value=st.session_state.pickup_address,placeholder="House / street, area, city, PIN code")
+            st.markdown("**Pickup address**")
+            if get_secret("GOOGLE_MAPS_API_KEY"):
+                st.caption("Your location is used to suggest these address parts. Review and correct them before booking. Address lookup by Google Maps.")
+            else:
+                st.caption("Address parts are editable. Add GOOGLE_MAPS_API_KEY in Streamlit Secrets to auto-fill them from your detected location.")
+            address_c1,address_c2=st.columns(2)
+            house=address_c1.text_input("House / flat number",key="address_house",placeholder="e.g. H305")
+            road=address_c2.text_input("Road / street",key="address_road",placeholder="Street or road name")
+            area=st.text_input("Area / locality",key="address_area",placeholder="Neighbourhood, campus, landmark")
+            address_c3,address_c4,address_c5=st.columns([1.2,1,1])
+            city=address_c3.text_input("City",key="address_city",placeholder="City")
+            state=address_c4.text_input("State",key="address_state",placeholder="State")
+            pincode=address_c5.text_input("PIN code",key="address_pincode",placeholder="6 digits",max_chars=6)
             st.markdown("**Person handing over the parcel**")
             c_collector1,c_collector2=st.columns(2)
             collector_name=c_collector1.text_input("Collector name",placeholder="Person who will hand over the parcel")
@@ -176,7 +281,10 @@ elif selected=="Book a Pickup":
         if submitted:
             digits="".join(ch for ch in phone if ch.isdigit())
             collector_digits="".join(ch for ch in collector_phone if ch.isdigit())
-            if not name or len(digits)<10 or not address or not collector_name or len(collector_digits)<10: st.error("Enter your name and mobile, complete the pickup address, and add the collector’s name and valid mobile number.")
+            pincode_digits="".join(ch for ch in pincode if ch.isdigit())
+            address_parts=[house,road,area,city,state,pincode]
+            address=", ".join(part.strip() for part in address_parts if part.strip())
+            if not name or len(digits)<10 or not city or not state or len(pincode_digits)!=6 or not collector_name or len(collector_digits)<10: st.error("Enter your name and mobile, city, state, 6-digit PIN code, and the collector’s name and valid mobile number.")
             else:
                 saved_photo=photo or photo_upload
                 photo_data=None
@@ -184,7 +292,7 @@ elif selected=="Book a Pickup":
                     import base64
                     photo_data=base64.b64encode(saved_photo.getvalue()).decode("ascii")
                 coords=st.session_state.get("device_location",{})
-                record={"booking_id":"PU"+uuid.uuid4().hex[:8].upper(),"sender_name":name,"phone":phone,"pickup_address":address,"collector_name":collector_name,"collector_phone":collector_phone,"pickup_latitude":coords.get("latitude"),"pickup_longitude":coords.get("longitude"),"location_accuracy":coords.get("accuracy"),"photo_data":photo_data,"pickup_date":pickup_date.isoformat(),"time_slot":slot,"contents":contents,"weight":weight,"priority":priority,"note":note,"status":"Pickup request received","created_at":datetime.now().isoformat()}
+                record={"booking_id":"PU"+uuid.uuid4().hex[:8].upper(),"sender_name":name,"phone":phone,"pickup_address":address,"house_number":house,"road":road,"area":area,"city":city,"state":state,"pincode":pincode,"collector_name":collector_name,"collector_phone":collector_phone,"pickup_latitude":coords.get("latitude"),"pickup_longitude":coords.get("longitude"),"location_accuracy":coords.get("accuracy"),"photo_data":photo_data,"pickup_date":pickup_date.isoformat(),"time_slot":slot,"contents":contents,"weight":weight,"priority":priority,"note":note,"status":"Pickup request received","created_at":datetime.now().isoformat()}
                 save_pickup(record);st.session_state.last_pickup=record;st.success(f"Pickup requested! Booking number: {record['booking_id']}.")
                 st.info(f"{pickup_date.strftime('%d %b %Y')} · {slot} · {'Priority pickup requested' if priority else 'Standard pickup'}")
                 st.session_state.pending_nav="My Pickups"
@@ -257,21 +365,67 @@ elif selected=="Wallet":
     with b: st.markdown("<div class='card'><div class='card-title'>Recent activity</div><div class='card-sub'>Concept only; not a real payment account.</div><div class='feature-note'>₹250 · Welcome demo credit<br><br>Refund status and wallet terms need definition before launch.</div></div>",unsafe_allow_html=True)
 
 elif selected=="Help & Support":
-    header("How can we help?","Get a quick answer or create a case with shipment details attached.")
-    ai_status="GPT-5 nano connected" if get_secret("OPENAI_API_KEY") and OpenAI else "Demo mode · add OPENAI_API_KEY for GPT-5 nano"
-    st.markdown(f"<div class='feature-note'>Support assistant · {ai_status}. It cannot view live DTDC systems; shipment updates in this prototype are sample data. Create a support case if it cannot resolve your question.</div>",unsafe_allow_html=True)
+    header("Help & Support","Choose a service and topic, browse common questions, or ask the support assistant.")
+    ai_status="GPT-5 nano is ready" if get_secret("OPENAI_API_KEY") and OpenAI else "AI is not connected · add OPENAI_API_KEY in Streamlit Secrets"
+    st.info(f"{ai_status}. The assistant uses only sample shipment/pickup records from this prototype, not DTDC live systems. Chat messages are sent to OpenAI when AI is connected; do not enter OTPs, passwords, or payment details.")
+
+    service=st.selectbox("Service type",list(SUPPORT_MENU),key="support_service")
+    categories=list(SUPPORT_MENU[service])
+    if st.session_state.get("support_category") not in categories:
+        st.session_state.support_category=categories[0]
+    category=st.selectbox("Help category",categories,key="support_category")
+    topics=SUPPORT_MENU[service][category]
+    if st.session_state.get("support_topic") not in topics:
+        st.session_state.support_topic=topics[0]
+    topic=st.selectbox("What do you need help with?",topics,key="support_topic")
+    chat_topic=f"{service} / {category} / {topic}"
+    if st.session_state.get("active_chat_topic") != chat_topic:
+        st.session_state.chat=[]
+        st.session_state.active_chat_topic=chat_topic
+        st.session_state.pending_support_prompt=None
+        st.caption("Changing the help topic starts a fresh conversation.")
+
+    st.markdown("#### Common questions")
+    suggestions=SUPPORT_SUGGESTIONS.get(topic,SUPPORT_SUGGESTIONS.get(category,[f"I need help with {topic.lower()}.","What should I do next?"]))
+    question_cols=st.columns(min(3,len(suggestions)))
+    for index,question in enumerate(suggestions):
+        if question_cols[index%len(question_cols)].button(question,key=f"support_suggestion_{index}_{service}_{category}_{topic}",use_container_width=True):
+            st.session_state.pending_support_prompt=question
+            st.rerun()
+
+    st.markdown("#### Chat with MyDTDC support")
+    ref=st.text_input("Consignment or pickup reference (optional)",key="support_reference",placeholder="e.g. D1234567890 or PUXXXXXXXX")
+    if st.button("Start new conversation",key="support_new_chat"):
+        st.session_state.chat=[]
+        st.session_state.pending_support_prompt=None
+        st.rerun()
+
+    def reply_to_support(question):
+        previous=list(st.session_state.chat)
+        st.session_state.chat.append(("user",question))
+        context=support_record_context(ref)
+        with st.spinner("MyDTDC support is preparing a reply…"):
+            answer=support_answer(previous,question,service,chat_topic,context)
+        st.session_state.chat.append(("assistant",answer))
+
+    pending=st.session_state.get("pending_support_prompt")
+    if pending:
+        st.session_state.pending_support_prompt=None
+        reply_to_support(pending)
     for role,msg in st.session_state.chat:
         with st.chat_message(role): st.write(msg)
-    prompt=st.chat_input("Ask about a shipment, pickup, or delivery")
+    prompt=st.chat_input("Type your question about this topic")
     if prompt:
-        answer=support_answer(st.session_state.chat,prompt)
-        st.session_state.chat.append(("user",prompt))
-        st.session_state.chat.append(("assistant",answer));st.rerun()
-    with st.expander("Create a support case"):
-        contact=st.text_input("Email or mobile number");problem=st.text_area("What do you need help with?")
-        if st.button("Submit support case"):
+        reply_to_support(prompt)
+        st.rerun()
+
+    with st.expander("Create a support request instead"):
+        st.caption(f"Category: {chat_topic}")
+        contact=st.text_input("Email or mobile number",key="case_contact")
+        problem=st.text_area("Describe what happened",key="case_problem")
+        if st.button("Submit support request",key="submit_support_case"):
             if not contact or not problem: st.error("Add a contact method and describe the issue.")
-            else: st.success(f"Support case SC{uuid.uuid4().hex[:7].upper()} created in this demo session.")
+            else: st.success(f"Support request SR{uuid.uuid4().hex[:7].upper()} created in this demo session under {category}.")
 
 st.markdown("<div class='footer'>MyDTDC concept prototype · Sample shipment information · No real booking, payment or delivery contact is initiated</div>",unsafe_allow_html=True)
 
