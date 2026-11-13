@@ -15,7 +15,7 @@
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      p => setValue({latitude:p.coords.latitude, longitude:p.coords.longitude, accuracy:p.coords.accuracy}),
+      () => setValue({permission:"granted"}),
       e => setValue({error:e.code === 1 ? "Location permission was declined." : "Could not read the current location."}),
       {enableHighAccuracy:true, timeout:12000, maximumAge:60000}
     );
