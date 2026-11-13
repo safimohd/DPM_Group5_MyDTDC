@@ -1,4 +1,5 @@
 streamlit>=1.40
 supabase>=2.10
 openai>=1.99
+requests>=2.31
 
