@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><script>
+(() => {
+  let lastRequest = null;
+  function send(type, data={}) {
+    window.parent.postMessage({isStreamlitMessage:true, type, ...data}, "*");
+  }
+  function setValue(value) {
+    send("streamlit:setComponentValue", {value, dataType:"json"});
+  }
+  function locate() {
+    if (!navigator.geolocation) {
+      setValue({error:"This browser does not support device location."});
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      p => setValue({latitude:p.coords.latitude, longitude:p.coords.longitude, accuracy:p.coords.accuracy}),
+      e => setValue({error:e.code === 1 ? "Location permission was declined." : "Could not read the current location."}),
+      {enableHighAccuracy:true, timeout:12000, maximumAge:60000}
+    );
+  }
+  window.addEventListener("message", event => {
+    const msg=event.data;
+    if (!msg || msg.type !== "streamlit:render") return;
+    const refresh=msg.args && msg.args.refresh;
+    if (lastRequest === null || refresh !== lastRequest) {
+      lastRequest=refresh;
+      locate();
+    }
+  });
+  send("streamlit:componentReady", {apiVersion:1});
+  send("streamlit:setFrameHeight", {height:0});
+})();
+</script></body></html>
+
