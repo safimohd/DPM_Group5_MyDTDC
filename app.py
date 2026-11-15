@@ -71,7 +71,7 @@ def sample_shipments():
     today = date.today()
     return {
         "D1234567890": {"consignment_no":"D1234567890","recipient":"Aarav Mehta","origin":"Bengaluru, Karnataka","destination":"Mumbai, Maharashtra","status":"In transit","eta":(today+timedelta(days=2)).isoformat(),"updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Indiranagar, Bengaluru","time":"Today, 10:42 AM","done":True},{"title":"Arrived at Bengaluru hub","place":"Bengaluru, Karnataka","time":"Today, 02:15 PM","done":True},{"title":"In transit to destination","place":"Next scan pending","time":"On the way","done":False},{"title":"Out for delivery","place":"Mumbai, Maharashtra","time":"Estimated delivery day","done":False}],"delivery_partner":"Will be shared when out for delivery"},
-        "D9876543210": {"consignment_no":"D9876543210","recipient":"Demo Receiver","origin":"Delhi, NCR","destination":"Pune, Maharashtra","status":"Out for delivery","eta":today.isoformat(),"updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Connaught Place, Delhi","time":"Yesterday, 09:10 AM","done":True},{"title":"Arrived at Pune hub","place":"Pune, Maharashtra","time":"Today, 06:20 AM","done":True},{"title":"Out for delivery","place":"Pune, Maharashtra","time":"Today, 09:05 AM","done":True},{"title":"Delivered","place":"Your delivery address","time":"Pending","done":False}],"delivery_partner":"Rohit • 98••• ••42"}
+        "D9876543210": {"consignment_no":"D9876543210","recipient":"Demo Receiver","origin":"Delhi, NCR","destination":"Pune, Maharashtra","status":"Out for delivery","eta":today.isoformat(),"updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Connaught Place, Delhi","time":"Yesterday, 09:10 AM","done":True},{"title":"Arrived at Pune hub","place":"Pune, Maharashtra","time":"Today, 06:20 AM","done":True},{"title":"Out for delivery","place":"Pune, Maharashtra","time":"Today, 09:05 AM","done":True},{"title":"Delivered","place":"Your delivery address","time":"Pending","done":False}],"delivery_partner":"Rohit S."}
     }
 
 if "shipments" not in st.session_state: st.session_state.shipments = sample_shipments()
@@ -116,8 +116,8 @@ def load_pickups():
             rows=client.table("pickup_requests").select("*").order("created_at",desc=True).limit(50).execute().data or []
             known={p.get("booking_id") for p in st.session_state.pickup_requests}
             st.session_state.pickup_requests.extend(p for p in rows if p.get("booking_id") not in known)
-        except Exception as exc:
-            st.info(f"Showing pickup requests from this session. Could not load saved requests: {exc}")
+        except Exception:
+            st.info("Showing pickup requests from this session.")
         st.session_state.pickup_requests_loaded=True
 
 def support_answer(history, prompt, service, topic, context):
@@ -175,6 +175,10 @@ SUPPORT_MENU={
 }
 
 SUPPORT_SUGGESTIONS={
+    "General query":["What can MyDTDC help me with?","How do I track my parcel?","How do I book a pickup?"],
+    "General Information":["What services does DTDC offer?","How do I contact DTDC support?","What are the available pickup time slots?"],
+    "Service availability":["Which PIN codes does DTDC serve?","Is intracity pickup available in my city?","What is the earliest pickup slot available?"],
+    "Contact support":["How do I raise a complaint?","What is the DTDC customer care number?","How long does it take to get a response?"],
     "Shipment Status":["Where is my shipment?","My tracking has not updated. What can I check?","It says delivered but I have not received it."],
     "Shipment status":["How do I track a shipment?","Why has tracking not updated?","It says delivered but I have not received it."],
     "Book a pickup":["How do I schedule a pickup?","Where can I see my pickup booking?","How do I change my pickup time?"],
@@ -213,7 +217,7 @@ elif selected=="Book a Pickup":
     left,right=st.columns([1.35,.8])
     with left:
         geo_error=geo.get("error") if isinstance(geo,dict) else None
-        if geo_error: st.caption(geo_error)
+        if geo_error and "permission" not in geo_error.lower() and "declined" not in geo_error.lower(): st.caption(geo_error)
         if st.session_state.get("location_permission_granted"):
             st.caption("Location permission granted. For this presentation demo, the pickup address is prefilled as IIM Bangalore; please review or edit it.")
         else:
@@ -243,7 +247,7 @@ elif selected=="Book a Pickup":
             c5,c6=st.columns(2);contents=c5.selectbox("What are you sending?",["Documents","Clothing","Electronics","Personal items","Other"]);weight=c6.selectbox("Approx. weight",["Up to 0.5 kg","0.5–2 kg","2–5 kg","More than 5 kg"])
             photo=st.camera_input("Take a location photo (optional)",help="On mobile this opens the camera. The photo stays in this demo session.")
             photo_upload=st.file_uploader("Or upload a location photo",type=["png","jpg","jpeg"],help="Demo only: this file is not stored in Supabase.")
-            priority=st.checkbox("Priority pickup · request earliest available collection (demo premium ₹99)")
+            priority=st.checkbox("Priority pickup · request earliest available collection (₹99 premium)")
             note=st.text_input("Note for the pickup partner (optional)",placeholder="Gate, landmark, or access instructions")
             submitted=st.form_submit_button("Confirm pickup request",type="primary",use_container_width=True)
         if submitted:
@@ -324,12 +328,12 @@ elif selected=="My Pickups":
 
 elif selected=="Wallet":
     header("DTDC Wallet","A prototype wallet for eligible refunds, shipment credits and future bookings.")
-    st.markdown(f"<div class='hero'><div style='font-size:12px;color:#D9E7F2'>AVAILABLE BALANCE · DEMO</div><h1 style='margin-top:8px'>₹{st.session_state.wallet_balance:.0f}</h1><p>Use your balance toward an eligible booking.</p></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='hero'><div style='font-size:12px;color:#D9E7F2'>AVAILABLE BALANCE</div><h1 style='margin-top:8px'>₹{st.session_state.wallet_balance:.0f}</h1><p>Use your balance toward an eligible booking.</p></div>",unsafe_allow_html=True)
     a,b=st.columns(2)
     with a:
         st.markdown("<div class='card'><div class='card-title'>Add demo credit</div><div class='card-sub'>Simulates adding funds; no payment is taken.</div></div>",unsafe_allow_html=True);credit=st.selectbox("Choose amount",[100,250,500])
         if st.button("Add demo credit",type="primary"): st.session_state.wallet_balance+=credit;st.success(f"₹{credit} demo credit added.");st.rerun()
-    with b: st.markdown("<div class='card'><div class='card-title'>Recent activity</div><div class='card-sub'>Concept only; not a real payment account.</div><div class='feature-note'>₹250 · Welcome demo credit<br><br>Refund status and wallet terms need definition before launch.</div></div>",unsafe_allow_html=True)
+    with b: st.markdown("<div class='card'><div class='card-title'>Recent activity</div><div class='card-sub'>Concept only; not a real payment account.</div><div class='feature-note'>₹250 · Welcome credit<br><br>₹100 · Refund for D1234567890<br><br>−₹99 · Priority pickup PU8F3A1C2B</div></div>",unsafe_allow_html=True)
 
 elif selected=="Help & Support":
     header("Help & Support","Choose a service and topic, browse common questions, or ask the support assistant.")
