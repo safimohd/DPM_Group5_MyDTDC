@@ -164,20 +164,17 @@ def support_answer(history, prompt, service, topic, context):
             "You cannot perform operational actions: booking, cancellation, address change, refund, or contacting a partner. For those, guide to the support request form. "
             "Never invent details not in the context. Never ask for OTPs, passwords, or payment details."
         )
-        conversation=[{"role":"system","content":instructions}]
-        conversation.extend({"role":role,"content":text} for role,text in history[-10:])
+        messages=[]
+        messages.extend({"role":role,"content":text} for role,text in history[-10:])
         user_content=f"Service: {service}\nHelp category: {topic}\nReference context: {context or 'No shipment or pickup record was attached.'}\nCustomer question: {prompt}"
-        conversation.append({"role":"user","content":user_content})
-        response=client_ai.responses.create(model="gpt-5-nano",input=conversation,max_output_tokens=300)
-        # extract text from Responses API — output_text is a convenience property but can be None
-        answer=None
-        if getattr(response,"output_text",None):
-            answer=response.output_text
-        elif getattr(response,"output",None):
+        messages.append({"role":"user","content":user_content})
+        response=client_ai.responses.create(model="gpt-5-nano",instructions=instructions,input=messages,max_output_tokens=300)
+        answer=getattr(response,"output_text",None)
+        if not answer and getattr(response,"output",None):
             for item in response.output:
                 for part in getattr(item,"content",[]):
-                    if getattr(part,"text",None):
-                        answer=part.text;break
+                    t=getattr(part,"text",None)
+                    if t: answer=t;break
                 if answer: break
         return (answer or "I couldn't prepare a response. Please create a support case below.").strip()
     except Exception as exc:
