@@ -99,7 +99,8 @@ if "pickup_requests" not in st.session_state:
         "weight": "Up to 0.5 kg",
         "priority": False,
         "note": "Ring the bell at the gate",
-        "status": "Pickup request received",
+        "status": "Pickup partner on the way",
+        "partner_name": "Rahul M.",
         "created_at": datetime.now().isoformat(),
     }]
 if "wallet_balance" not in st.session_state: st.session_state.wallet_balance = 250
@@ -116,13 +117,14 @@ if not st.session_state.iimb_address_prefilled:
         if not st.session_state[field]: st.session_state[field]=value
     st.session_state.iimb_address_prefilled=True
 if "pickup_call_requested" not in st.session_state: st.session_state.pickup_call_requested = set()
+if "track_pickup_id" not in st.session_state: st.session_state.track_pickup_id = "PU4A8B2C1D"
 geo = location_component(refresh=st.session_state.location_refresh, key="mydtdc_location_component", default=None)
 if isinstance(geo, dict) and geo.get("permission") == "granted":
     st.session_state.location_permission_granted=True
 client = db()
 backend = "Supabase connected" if client else "Demo mode · session data"
 st.markdown(f"<div class='brandbar'><div class='brand'><div class='brandmark'>D</div><div><div class='brandname'>MyDTDC</div><div class='brandtag'>Ship with confidence</div></div></div><div class='demo-pill'>{backend}</div></div>",unsafe_allow_html=True)
-pages=["Home","Book a Pickup","Track Shipment","My Shipments","My Pickups","Wallet","Help & Support"]
+pages=["Home","Book a Pickup","Track Shipment","Track Pickup","My Shipments","My Pickups","Wallet","Help & Support"]
 if st.session_state.pending_nav in pages:
     st.session_state.nav = st.session_state.pending_nav
     st.session_state.pending_nav = None
@@ -299,6 +301,60 @@ elif selected=="Book a Pickup":
         if st.session_state.get("last_pickup"):
             p=st.session_state.last_pickup;st.markdown(f"<div class='card'><div class='card-title'>Latest pickup</div><b>{p['booking_id']}</b><p><span class='status status-warn'>{p['status']}</span></p><small>{p['pickup_date']} · {p['time_slot']}</small></div>",unsafe_allow_html=True)
 
+elif selected=="Track Pickup":
+    header("Track your pickup partner","See where your pickup partner is and how far they are from your location.")
+    pickup_id=st.session_state.get("track_pickup_id","PU4A8B2C1D")
+    p=next((x for x in st.session_state.pickup_requests if x.get("booking_id")==pickup_id),None)
+    if not p and st.session_state.pickup_requests:
+        p=st.session_state.pickup_requests[0]
+    if p:
+        col1,col2,col3=st.columns(3)
+        col1.markdown(f"<div class='kpi'><div class='kpi-label'>BOOKING</div><div class='kpi-value'>{p.get('booking_id','')}</div></div>",unsafe_allow_html=True)
+        col2.markdown(f"<div class='kpi'><div class='kpi-label'>PICKUP PARTNER</div><div class='kpi-value'>{p.get('partner_name','Rahul M.')}</div></div>",unsafe_allow_html=True)
+        col3.markdown(f"<div class='kpi'><div class='kpi-label'>ETA</div><div class='kpi-value'>~8 min · 1.8 km</div></div>",unsafe_allow_html=True)
+        st.markdown("")
+        mapcol,infocol=st.columns([1.4,1])
+        with mapcol:
+            # IIM Bangalore main gate: 12.9343, 77.5953
+            # Partner location (simulated ~1.8 km away, heading south on Bannerghatta Rd): 12.9490, 77.5930
+            map_html="""
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="pumap" style="height:300px;border-radius:14px;overflow:hidden;border:1px solid #E3EAF0;"></div>
+<script>
+var map=L.map('pumap').setView([12.9415,77.5942],14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+var youIcon=L.divIcon({html:'<div style="background:#102A43;color:white;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:17px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)">📍</div>',iconSize:[34,34],iconAnchor:[17,17],className:''});
+var partnerIcon=L.divIcon({html:'<div style="background:#D71920;color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)">🚴</div>',iconSize:[36,36],iconAnchor:[18,18],className:''});
+L.marker([12.9343,77.5953],{icon:youIcon}).addTo(map).bindPopup('<b>Your location</b><br>Main Gate, IIM Bangalore').openPopup();
+L.marker([12.9490,77.5930],{icon:partnerIcon}).addTo(map).bindPopup('<b>Rahul M. — Pickup partner</b><br>~8 min away on Bannerghatta Road');
+L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.5953]],{color:'#D71920',weight:3,dashArray:'6,6',opacity:0.7}).addTo(map);
+</script>"""
+            components.html(map_html,height=310)
+        with infocol:
+            st.markdown(f"<div class='card'><div class='card-title'>Partner details</div><p><b>Name:</b> {p.get('partner_name','Rahul M.')}<br><b>Slot:</b> {p.get('time_slot','9 AM – 12 PM')}<br><b>Date:</b> {p.get('pickup_date','')}</p><div class='feature-note'>The partner is tracking your address. Stay near the pickup location.</div></div>",unsafe_allow_html=True)
+            st.markdown(f"<div class='card'><div class='card-title'>Pickup address</div><p style='font-size:13px'>{p.get('pickup_address','')}</p></div>",unsafe_allow_html=True)
+            if st.button("📞  Call pickup partner",key="call_pu_partner",use_container_width=True):
+                st.session_state.pu_call_placed=True
+            if st.session_state.get("pu_call_placed"):
+                st.success("Demo call request ready: the live service would connect from your registered number using a masked relay. No call is placed by this prototype.")
+        # stage timeline
+        st.markdown("<div class='card-title' style='margin-top:14px;margin-bottom:10px'>Pickup journey</div>",unsafe_allow_html=True)
+        stages=[("Pickup request received","Booking reference generated","done"),("DTDC confirmed","Slot confirmed","done"),("Partner assigned","Rahul M. assigned to your pickup","done"),("Partner on the way","Tracking live · ~8 min away","active"),("Parcel collected","Pending","future")]
+        tl="<div class='timeline'>"
+        for title,sub,state in stages:
+            cls="event" if state in ("done","active") else "event future"
+            dot_style=""
+            if state=="active":
+                dot_style="style='background:#D71920;box-shadow:0 0 0 1px #D71920;'"
+            tl+=f"<div class='{cls}'><b{' style=\"color:#D71920\"' if state=='active' else ''}>{title}</b><small>{sub}</small></div>"
+        tl+="</div>"
+        st.markdown(tl,unsafe_allow_html=True)
+        st.caption("Location shown is simulated for this usability demo. In the live product, the partner's device shares real-time GPS coordinates.")
+    else:
+        st.info("No active pickup to track. Book a pickup first.")
+        if st.button("Book a pickup",type="primary"): st.session_state.pending_nav="Book a Pickup";st.rerun()
+
 elif selected=="Track Shipment":
     header("Track your shipment","Follow parcel scans and see the next expected step. Sample consignment numbers are in My Shipments.")
     c1,c2=st.columns([1.2,1]);number=c1.text_input("Consignment number",value=st.session_state.get("track_number","D1234567890"),placeholder="Enter consignment number")
@@ -343,9 +399,22 @@ elif selected=="My Pickups":
     for p in st.session_state.pickup_requests:
         with st.container(border=True):
             a,b=st.columns([1.2,.8])
-            a.markdown(f"### {p.get('booking_id','Pickup request')}\n**{p.get('status','Pickup request received')}** · {p.get('pickup_date','')} · {p.get('time_slot','')}")
+            status=p.get('status','Pickup request received')
+            a.markdown(f"### {p.get('booking_id','Pickup request')}\n**{status}** · {p.get('pickup_date','')} · {p.get('time_slot','')}")
             b.markdown(f"**Pickup address**\n\n{p.get('pickup_address','Address not available')}\n\n**Person handing over**\n\n{p.get('collector_name','')} · {p.get('collector_phone','')}")
-            st.markdown("<div class='timeline'><div class='event'><b>Request received</b><small>Booking reference generated · "+str(p.get("created_at",""))[:16].replace("T"," ")+"</small></div><div class='event future'><b>Pickup confirmation</b><small>Pending DTDC confirmation</small></div><div class='event future'><b>Pickup partner assigned</b><small>Partner and call option appear when assigned</small></div><div class='event future'><b>Parcel collected</b><small>Collection scan will confirm handover</small></div></div>",unsafe_allow_html=True)
+            # timeline stages
+            stage_map={"Pickup request received":0,"DTDC confirmed":1,"Pickup partner assigned":2,"Pickup partner on the way":3,"Parcel collected":4}
+            cur=stage_map.get(status,0)
+            stages=[("Request received","Booking reference generated · "+str(p.get("created_at",""))[:16].replace("T"," ")),("DTDC confirmed","Slot and partner matching in progress"),("Pickup partner assigned","Partner details shared in app"),("Partner on the way","Track live location in Track Pickup"),("Parcel collected","Collection scan confirms handover")]
+            tl="<div class='timeline'>"
+            for i,(title,sub) in enumerate(stages):
+                cls="event" if i<=cur else "event future"
+                tl+=f"<div class='{cls}'><b>{title}</b><small>{sub}</small></div>"
+            tl+="</div>"
+            st.markdown(tl,unsafe_allow_html=True)
+            if status=="Pickup partner on the way":
+                if st.button("📍  Track pickup partner",key="trackpu_"+p.get("booking_id",""),type="primary"):
+                    st.session_state.track_pickup_id=p.get("booking_id");st.session_state.pending_nav="Track Pickup";st.rerun()
             if p.get("photo_data"):
                 import base64
                 st.image(base64.b64decode(p["photo_data"]),caption="Pickup location photo · demo session only",width=280)
