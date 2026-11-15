@@ -461,6 +461,20 @@ elif selected=="Help & Support":
 
     st.markdown("#### Chat with MyDTDC support")
     ref=st.text_input("Consignment or pickup reference (optional)",key="support_reference",placeholder="e.g. D1234567890 or PUXXXXXXXX")
+    # show inline status card when a known reference is entered
+    _ref_upper=(ref or "").strip().upper()
+    if _ref_upper:
+        _s=st.session_state.shipments.get(_ref_upper)
+        _p=next((x for x in st.session_state.pickup_requests if x.get("booking_id","").upper()==_ref_upper),None)
+        if _s:
+            _status_color="#16794B" if "transit" in _s["status"].lower() or "delivery" in _s["status"].lower() else "#9A6400"
+            st.markdown(f"<div class='card' style='margin-bottom:12px'><div style='display:flex;justify-content:space-between;align-items:center'><div><div class='card-title' style='font-size:14px'>{_ref_upper}</div><div style='font-size:12px;color:#627D98;margin-top:2px'>{_s['origin']} → {_s['destination']}</div></div><span class='status'>{_s['status']}</span></div><div style='margin-top:10px;font-size:12px;color:#627D98'>ETA: {_s['eta']} &nbsp;·&nbsp; Last updated: {_s['updated']}</div></div>",unsafe_allow_html=True)
+        elif _p:
+            _pstatus=_p.get('status','Pickup request received')
+            _pbadge="status-warn" if "way" in _pstatus.lower() or "assigned" in _pstatus.lower() else "status"
+            st.markdown(f"<div class='card' style='margin-bottom:12px'><div style='display:flex;justify-content:space-between;align-items:center'><div><div class='card-title' style='font-size:14px'>{_ref_upper}</div><div style='font-size:12px;color:#627D98;margin-top:2px'>{_p.get('pickup_address','')[:55]}…</div></div><span class='status {_pbadge}'>{_pstatus}</span></div><div style='margin-top:10px;font-size:12px;color:#627D98'>{_p.get('pickup_date','')} &nbsp;·&nbsp; {_p.get('time_slot','')} &nbsp;·&nbsp; {_p.get('contents','')}</div></div>",unsafe_allow_html=True)
+        else:
+            st.caption("Reference not found in demo data. The assistant will still try to answer your question.")
     if st.button("Start new conversation",key="support_new_chat"):
         st.session_state.chat=[]
         st.session_state.pending_support_prompt=None
