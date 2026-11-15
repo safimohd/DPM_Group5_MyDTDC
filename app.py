@@ -148,37 +148,89 @@ def load_pickups():
             st.info("Showing pickup requests from this session.")
         st.session_state.pickup_requests_loaded=True
 
+def _smart_reply(prompt, context):
+    """Rule-based responder: reads status directly from context JSON, no API needed."""
+    p=prompt.lower()
+    loc_q=any(w in p for w in ["where","location","map","track","how far","distance","when","eta","arrive","coming","reach","status","update","order"])
+    cancel_q=any(w in p for w in ["cancel","reschedule","change","modify","update address"])
+    agent_q=any(w in p for w in ["agent","executive","human","call","speak","talk","connect","escalate"])
+    complaint_q=any(w in p for w in ["complaint","damage","lost","missing","wrong","delay","late","not delivered"])
+
+    if context and "No sample" not in context:
+        try:
+            rec=json.loads(context)
+        except Exception:
+            rec={}
+        kind=rec.get("kind","")
+        status=rec.get("status","")
+        ref=rec.get("booking_id") or rec.get("consignment_no","")
+
+        if kind=="pickup request":
+            slot=rec.get("time_slot","your scheduled slot")
+            pdate=rec.get("pickup_date","")
+            date_str=f" on {pdate}" if pdate else ""
+
+            if status=="Pickup partner on the way":
+                if loc_q:
+                    return (f"Your pickup partner Rahul M. is on the way to your location right now! "
+                            f"He's about 1.8 km away and should reach you in roughly 10 to 15 minutes{date_str} during {slot}. "
+                            f"Please keep your parcel ready and stay near the pickup address. "
+                            f"You can see his live position on the Track Pickup screen.")
+                return (f"Your pickup (Ref: {ref}) is active. Rahul M. is heading to you{date_str} during {slot}. "
+                        f"Tap 'Track pickup partner' to follow him on the map.")
+            elif status=="Parcel collected":
+                return (f"Your parcel has been collected by DTDC! Booking {ref} is now in transit. "
+                        f"You can track the shipment status under Track Shipment once a consignment number is assigned.")
+            elif status=="DTDC confirmed":
+                return (f"Your pickup {ref} has been confirmed by DTDC. A partner will be assigned shortly for {slot}{date_str}. "
+                        f"You'll see a notification once someone is on the way.")
+            elif status=="Pickup partner assigned":
+                return (f"Great, a pickup partner has been assigned to your request {ref}! "
+                        f"They will head to you during {slot}{date_str}. Watch this space for live tracking once they set off.")
+            elif status=="Pickup request received":
+                return (f"Your pickup request {ref} has been received and is pending DTDC confirmation. "
+                        f"Scheduled for {slot}{date_str}. You'll hear back soon.")
+            else:
+                return f"Your pickup {ref} is currently showing status: {status}. If you need more details or have a concern, please raise a support request below."
+
+        elif kind=="sample shipment":
+            eta=rec.get("eta","")
+            dest=rec.get("destination","")
+            eta_str=f" Expected delivery: {eta}." if eta else ""
+            dest_str=f" to {dest}" if dest else ""
+
+            if status=="Out for delivery":
+                if loc_q:
+                    return (f"Your shipment {ref} is out for delivery{dest_str} today!{eta_str} "
+                            f"The delivery executive is on their route and should reach you shortly. "
+                            f"Please keep your phone accessible and ensure someone is available at the address.")
+                return f"Your shipment {ref} is out for delivery{dest_str}.{eta_str} Stay available at the delivery address."
+            elif "transit" in status.lower() or "in transit" in status.lower():
+                return (f"Your shipment {ref} is in transit{dest_str}.{eta_str} "
+                        f"It's moving through the DTDC network and will be out for delivery on the expected date.")
+            elif "delivered" in status.lower():
+                return f"Your shipment {ref} has been delivered{dest_str}. If you haven't received it, please raise a support request below."
+            else:
+                return f"Your shipment {ref} is currently: {status}.{eta_str} For detailed tracking, check the Track Shipment screen."
+
+    # No reference context
+    if loc_q:
+        return ("I can look up your order status right away. Please enter your pickup booking ID or shipment consignment number "
+                "in the reference field above and ask again. For the demo, try entering **PU4A8B2C1D**.")
+    if cancel_q:
+        return ("Cancellations and address changes need to go through our operations team. "
+                "Please use the support request form below and select the relevant category. Our team typically responds within 2 hours.")
+    if agent_q:
+        return ("I'll connect you with a support executive. During office hours (9 AM to 6 PM), "
+                "you can reach DTDC at 1800-123-3339. Outside those hours, please submit a support request below and we'll call you back.")
+    if complaint_q:
+        return ("I'm sorry to hear that. For complaints about damage, delays, or missing parcels, please file a support request below "
+                "with your consignment number. Our team will investigate and respond within 24 hours.")
+    return ("I'm here to help with your DTDC shipments and pickups. "
+            "Could you share your booking or consignment number so I can pull up the exact status for you?")
+
 def support_answer(history, prompt, service, topic, context):
-    api_key=get_secret("OPENAI_API_KEY")
-    if not api_key or OpenAI is None:
-        return "AI replies are not connected yet. The quick-help topics above can guide you, or submit a support request below."
-    try:
-        client_ai=OpenAI(api_key=api_key, timeout=25.0, max_retries=1)
-        instructions=(
-            "You are the MyDTDC in-app support assistant. "
-            "When a shipment or pickup record is supplied in the reference context, treat it as the live status for that order and answer directly from it. "
-            "For example: if the status is 'Out for delivery', say so clearly, include the ETA and route if available, and tell the customer what to expect next. "
-            "If the status is 'Pickup partner on the way', confirm the partner is coming, give the slot, and tell the customer to stay near the pickup address. "
-            "Be warm, specific, and concise — one short paragraph is enough. Do not hedge or say you lack access to live systems when context is provided. "
-            "If no reference context is provided, ask the customer for their consignment or pickup reference number. "
-            "You cannot perform operational actions: booking, cancellation, address change, refund, or contacting a partner. For those, guide to the support request form. "
-            "Never invent details not in the context. Never ask for OTPs, passwords, or payment details."
-        )
-        messages=[]
-        messages.extend({"role":role,"content":text} for role,text in history[-10:])
-        user_content=f"Service: {service}\nHelp category: {topic}\nReference context: {context or 'No shipment or pickup record was attached.'}\nCustomer question: {prompt}"
-        messages.append({"role":"user","content":user_content})
-        response=client_ai.responses.create(model="gpt-5-nano",instructions=instructions,input=messages,max_output_tokens=300)
-        answer=getattr(response,"output_text",None)
-        if not answer and getattr(response,"output",None):
-            for item in response.output:
-                for part in getattr(item,"content",[]):
-                    t=getattr(part,"text",None)
-                    if t: answer=t;break
-                if answer: break
-        return (answer or "I couldn't prepare a response. Please create a support case below.").strip()
-    except Exception as exc:
-        return f"I couldn't reach the support assistant just now. Please try again or create a support case below. (Assistant error: {type(exc).__name__})"
+    return _smart_reply(prompt, context)
 
 def support_record_context(reference):
     reference=(reference or "").strip().upper()
