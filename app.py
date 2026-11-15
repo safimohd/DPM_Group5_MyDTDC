@@ -168,8 +168,8 @@ def support_answer(history, prompt, service, topic, context):
         conversation.extend({"role":role,"content":text} for role,text in history[-10:])
         user_content=f"Service: {service}\nHelp category: {topic}\nReference context: {context or 'No shipment or pickup record was attached.'}\nCustomer question: {prompt}"
         conversation.append({"role":"user","content":user_content})
-        response=client_ai.responses.create(model="gpt-5-nano",input=conversation,max_output_tokens=250)
-        answer=(response.output_text or "I couldn't prepare a response. Please create a support case below.").strip()
+        response=client_ai.chat.completions.create(model="gpt-4o-mini",messages=conversation,max_tokens=300)
+        answer=(response.choices[0].message.content or "I couldn't prepare a response. Please create a support case below.").strip()
         return answer
     except Exception as exc:
         return f"I couldn't reach the support assistant just now. Please try again or create a support case below. (Assistant error: {type(exc).__name__})"
