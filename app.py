@@ -152,11 +152,14 @@ def _smart_reply(prompt, context):
     """Rule-based responder: reads status directly from context JSON, no API needed."""
     p=prompt.lower()
     loc_q=any(w in p for w in ["where","location","map","track","how far","distance","when","eta","arrive","coming","reach","status","update","order"])
-    cancel_q=any(w in p for w in ["cancel","reschedule","change","modify","update address"])
+    cancel_q=any(w in p for w in ["cancel","reschedule","change","modify","update address","rebook","new slot","new time"])
     agent_q=any(w in p for w in ["agent","executive","human","call","speak","talk","connect","escalate"])
     complaint_q=any(w in p for w in ["complaint","damage","lost","missing","wrong","delay","late","not delivered"])
+    charge_q=any(w in p for w in ["charge","charges","price","pricing","cost","rate","fee","payment","how much","billing","invoice","paid","pay"])
+    after_collect_q=any(w in p for w in ["after collect","once collected","parcel collected","after pickup","what next","next step","transit","then what","consignment"])
+    delivery_q=any(w in p for w in ["deliver","delivery","receiving","receive","incoming","someone sending","being sent","arriving","shipment arriving","expecting"])
 
-    # Intent-first: operational requests are answered regardless of whether a record is loaded
+    # Intent-first: operational requests answered regardless of whether a record is loaded
     if cancel_q:
         ref_hint=""
         if context and "No sample" not in context:
@@ -172,6 +175,25 @@ def _smart_reply(prompt, context):
     if complaint_q:
         return ("I'm sorry to hear that. For complaints about damage, delays, or missing parcels, please file a support request below "
                 "with your consignment number. Our team will investigate and respond within 24 hours.")
+    if charge_q:
+        return ("Shipping charges depend on the parcel weight, dimensions, service type (local or national), and pickup location. "
+                "You can get an instant quote on the Book a Pickup screen before confirming. "
+                "If you've already been charged and have a concern, please raise a support request below with your booking reference.")
+    if after_collect_q:
+        ref_hint=""
+        if context and "No sample" not in context:
+            try:
+                rec=json.loads(context); ref_hint=f" for booking {rec.get('booking_id','')}" if rec.get('booking_id') else ""
+            except Exception: pass
+        return (f"Once your parcel is collected{ref_hint}, DTDC assigns a consignment number within a few hours. "
+                f"From that point you can track the shipment's journey under Track Shipment using that number. "
+                f"You'll move through: In Transit, then Out for Delivery, then Delivered. "
+                f"For intercity shipments, typical transit is 2 to 5 business days depending on the route.")
+    if delivery_q:
+        return ("To track an incoming shipment, you'll need the consignment number from the sender. "
+                "Head to Track Shipment and enter that number. You'll see the current stage, the expected delivery date, "
+                "and each checkpoint the parcel has passed through. "
+                "If the sender hasn't shared the number yet, ask them to check their MyDTDC booking confirmation.")
 
     if context and "No sample" not in context:
         try:
