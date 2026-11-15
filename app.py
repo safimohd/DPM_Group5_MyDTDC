@@ -75,7 +75,33 @@ def sample_shipments():
     }
 
 if "shipments" not in st.session_state: st.session_state.shipments = sample_shipments()
-if "pickup_requests" not in st.session_state: st.session_state.pickup_requests = []
+if "pickup_requests" not in st.session_state:
+    _demo_pickup_date = (date.today() + timedelta(days=1)).isoformat()
+    st.session_state.pickup_requests = [{
+        "booking_id": "PU4A8B2C1D",
+        "sender_name": "Demo User",
+        "phone": "9876543210",
+        "pickup_address": "Main Gate, Bannerghatta Road, IIM Bangalore, Bengaluru, Karnataka, 560076",
+        "house_number": "Main Gate",
+        "road": "Bannerghatta Road",
+        "area": "IIM Bangalore, Bannerghatta Main Road",
+        "city": "Bengaluru",
+        "state": "Karnataka",
+        "pincode": "560076",
+        "collector_name": "Demo User",
+        "collector_phone": "9876543210",
+        "pickup_latitude": None,
+        "pickup_longitude": None,
+        "photo_data": None,
+        "pickup_date": _demo_pickup_date,
+        "time_slot": "9 AM – 12 PM",
+        "contents": "Documents",
+        "weight": "Up to 0.5 kg",
+        "priority": False,
+        "note": "Ring the bell at the gate",
+        "status": "Pickup request received",
+        "created_at": datetime.now().isoformat(),
+    }]
 if "wallet_balance" not in st.session_state: st.session_state.wallet_balance = 250
 if "chat" not in st.session_state: st.session_state.chat = []
 if "nav" not in st.session_state: st.session_state.nav = "Home"
