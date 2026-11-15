@@ -156,6 +156,23 @@ def _smart_reply(prompt, context):
     agent_q=any(w in p for w in ["agent","executive","human","call","speak","talk","connect","escalate"])
     complaint_q=any(w in p for w in ["complaint","damage","lost","missing","wrong","delay","late","not delivered"])
 
+    # Intent-first: operational requests are answered regardless of whether a record is loaded
+    if cancel_q:
+        ref_hint=""
+        if context and "No sample" not in context:
+            try:
+                rec=json.loads(context); ref_hint=f" (Ref: {rec.get('booking_id') or rec.get('consignment_no','')})"
+            except Exception: pass
+        return (f"Cancellations and rescheduling{ref_hint} need to go through our operations team since a partner may already be assigned. "
+                f"Please use the support request form below, select 'Booking and Tracking' and choose 'Update booking details'. "
+                f"Our team typically responds within 2 hours during office hours.")
+    if agent_q:
+        return ("You can reach a DTDC support executive at 1800-123-3339 (toll-free, 9 AM to 6 PM, Mon to Sat). "
+                "Outside those hours, submit a support request below and we'll call you back within the next business day.")
+    if complaint_q:
+        return ("I'm sorry to hear that. For complaints about damage, delays, or missing parcels, please file a support request below "
+                "with your consignment number. Our team will investigate and respond within 24 hours.")
+
     if context and "No sample" not in context:
         try:
             rec=json.loads(context)
@@ -213,19 +230,10 @@ def _smart_reply(prompt, context):
             else:
                 return f"Your shipment {ref} is currently: {status}.{eta_str} For detailed tracking, check the Track Shipment screen."
 
-    # No reference context
+    # No reference context and no specific intent matched above
     if loc_q:
         return ("I can look up your order status right away. Please enter your pickup booking ID or shipment consignment number "
                 "in the reference field above and ask again. For the demo, try entering **PU4A8B2C1D**.")
-    if cancel_q:
-        return ("Cancellations and address changes need to go through our operations team. "
-                "Please use the support request form below and select the relevant category. Our team typically responds within 2 hours.")
-    if agent_q:
-        return ("I'll connect you with a support executive. During office hours (9 AM to 6 PM), "
-                "you can reach DTDC at 1800-123-3339. Outside those hours, please submit a support request below and we'll call you back.")
-    if complaint_q:
-        return ("I'm sorry to hear that. For complaints about damage, delays, or missing parcels, please file a support request below "
-                "with your consignment number. Our team will investigate and respond within 24 hours.")
     return ("I'm here to help with your DTDC shipments and pickups. "
             "Could you share your booking or consignment number so I can pull up the exact status for you?")
 
