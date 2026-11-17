@@ -127,9 +127,7 @@ if "chat" not in st.session_state: st.session_state.chat = []
 if "nav" not in st.session_state: st.session_state.nav = "Home"
 if "pending_nav" not in st.session_state: st.session_state.pending_nav = None
 # saved addresses for repeat booking
-if "saved_addresses" not in st.session_state: st.session_state.saved_addresses = [
-    {"label": "IIMB Main Gate", "house": "Main Gate", "road": "Bannerghatta Road", "area": "IIM Bangalore", "city": "Bengaluru", "state": "Karnataka", "pincode": "560076"},
-]
+if "saved_addresses" not in st.session_state: st.session_state.saved_addresses = []
 # toast dismissal tracking per shipment
 if "toast_dismissed" not in st.session_state: st.session_state.toast_dismissed = set()
 # stale-status watchdog: shipments with no scan in 48h (demo: D7777777777 is hardcoded stale)
@@ -194,9 +192,9 @@ with st.sidebar:
         st.session_state.pending_nav = "My Shipments"; st.rerun()
     if st.button("🗓  My Pickups", key="sidebar_pickups", use_container_width=True):
         st.session_state.pending_nav = "My Pickups"; st.rerun()
-    # Delay alerts in sidebar
+    # Delay alerts in sidebar (User role only)
     _sb_delayed = [k for k, v in st.session_state.shipments.items() if v.get("status") == "Delayed"]
-    if _sb_delayed:
+    if _sb_delayed and st.session_state.app_role == "User":
         st.markdown("<hr style='margin:12px 0;border:none;border-top:1px solid #E3EAF0'>", unsafe_allow_html=True)
         st.markdown(f"<div style='font-size:11px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px'>⚠️ Delay alerts</div>", unsafe_allow_html=True)
         for _dk in _sb_delayed:
@@ -204,6 +202,18 @@ with st.sidebar:
             st.markdown(f"<div style='font-size:11px;color:#78350F;background:#FEF3C7;border-radius:8px;padding:8px 10px;margin-bottom:6px'><b>{_dk}</b><br>{_ds['origin']} → {_ds['destination']}</div>", unsafe_allow_html=True)
             if st.button(f"Track {_dk}", key=f"sb_track_{_dk}", use_container_width=True):
                 st.session_state.track_number = _dk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
+    # Saved addresses quick-access in sidebar (User role only)
+    if st.session_state.app_role == "User" and st.session_state.saved_addresses:
+        st.markdown("<hr style='margin:12px 0;border:none;border-top:1px solid #E3EAF0'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:11px;font-weight:700;color:{NAVY};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px'>📍 Saved addresses</div>", unsafe_allow_html=True)
+        for _sa in st.session_state.saved_addresses:
+            st.markdown(f"<div style='font-size:11px;color:{INK};background:#EFF6FF;border-radius:8px;padding:8px 10px;margin-bottom:6px'><b>{_sa['label']}</b><br><span style='color:{MUTED}'>{_sa.get('area','')}, {_sa.get('city','')}</span></div>", unsafe_allow_html=True)
+            if st.button("Book from here", key=f"sb_book_{_sa['label']}", use_container_width=True):
+                for _fld in ("house","road","area","city","state","pincode"):
+                    st.session_state[f"address_{_fld}"] = _sa.get(_fld, "")
+                st.session_state.last_saved_fill = _sa["label"]
+                st.session_state.pending_nav = "Book a Pickup"
+                st.rerun()
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
 
@@ -442,26 +452,6 @@ if st.session_state.app_role == "User":
                     st.session_state.toast_dismissed.add(dk)
                     st.rerun()
 
-        # Stale-status watchdog: alert if no scan in 48+ hours
-        # Demo: D7777777777 is hardcoded as stale (last scan >48h ago)
-        _stale_shipments = ["D7777777777"] if "D7777777777" in st.session_state.shipments else []
-        _active_stale = [s for s in _stale_shipments if s not in st.session_state.stale_watchdog_dismissed]
-        for _sk in _active_stale:
-            _ss = st.session_state.shipments[_sk]
-            st.markdown(f"""<div style='background:#FFF7ED;border:1.5px solid #FB923C;border-radius:10px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px'>
-  <div style='font-size:20px'>🕒</div>
-  <div style='flex:1'>
-    <div style='font-size:11px;font-weight:700;color:#C2410C;text-transform:uppercase;letter-spacing:0.06em'>No scan in 48+ hours</div>
-    <div style='font-size:13px;font-weight:600;color:#7C2D12;margin-top:2px'>{_sk} · {_ss["origin"]} → {_ss["destination"]}</div>
-    <div style='font-size:11px;color:#9A3412;margin-top:1px'>Last status: {_ss.get("status","Unknown")}. DTDC has been notified to investigate.</div>
-  </div>
-</div>""", unsafe_allow_html=True)
-            _stale_col1, _stale_col2 = st.columns([1, 1])
-            if _stale_col1.button(f"Track {_sk}", key=f"stale_track_{_sk}", use_container_width=True):
-                st.session_state.track_number = _sk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
-            if _stale_col2.button("Dismiss", key=f"stale_dismiss_{_sk}", use_container_width=True):
-                st.session_state.stale_watchdog_dismissed.add(_sk); st.rerun()
-
         st.markdown("<div class='card-title' style='margin:8px 0 12px'>Your recent shipments</div>", unsafe_allow_html=True)
         cols = st.columns(2)
         for col, key in zip(cols, list(st.session_state.shipments)[:2]):
@@ -556,22 +546,6 @@ if st.session_state.app_role == "User":
                     st.success(f"Location confirmed: Lat {lat:.5f}, Lng {lng:.5f}. Address prefilled as IIM Bangalore for this demo.")
             else:
                 st.caption("The pickup address is prefilled as IIM Bangalore for this demo.")
-
-            # Saved address quick-select — guard against infinite rerun loop
-            # Track the last address we already filled so we rerun only once per new selection
-            if "last_saved_fill" not in st.session_state:
-                st.session_state.last_saved_fill = None
-            if st.session_state.saved_addresses:
-                addr_labels = ["-- Select a saved address --"] + [a["label"] for a in st.session_state.saved_addresses]
-                selected_saved = st.selectbox("Quick-fill a saved address", addr_labels, key="saved_addr_select")
-                if (selected_saved != "-- Select a saved address --"
-                        and selected_saved != st.session_state.last_saved_fill):
-                    match = next((a for a in st.session_state.saved_addresses if a["label"] == selected_saved), None)
-                    if match:
-                        for field in ("house","road","area","city","state","pincode"):
-                            st.session_state[f"address_{field}"] = match.get(field, "")
-                        st.session_state.last_saved_fill = selected_saved
-                        st.rerun()  # only fires once per new selection; subsequent renders skip this branch
 
             with st.form("pickup_form"):
                 st.markdown("**Pickup details**")
@@ -1129,6 +1103,26 @@ elif st.session_state.app_role == "Delivery Partner":
     # ── DELIVERIES TODAY ──────────────────────────────────────────────────────
     if partner_selected == "Deliveries Today":
         header("Deliveries Today", f"{len(st.session_state.partner_deliveries)} orders assigned · all heading to Bengaluru South zone")
+
+        # Stale-status watchdog: visible to delivery partner only
+        # Demo: D7777777777 is hardcoded as stale (last scan >48h ago)
+        _stale_shipments = ["D7777777777"] if "D7777777777" in st.session_state.shipments else []
+        _active_stale = [s for s in _stale_shipments if s not in st.session_state.stale_watchdog_dismissed]
+        for _sk in _active_stale:
+            _ss = st.session_state.shipments[_sk]
+            st.markdown(f"""<div style='background:#FFF7ED;border:1.5px solid #FB923C;border-radius:10px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px'>
+  <div style='font-size:20px'>🕒</div>
+  <div style='flex:1'>
+    <div style='font-size:11px;font-weight:700;color:#C2410C;text-transform:uppercase;letter-spacing:0.06em'>No scan in 48+ hours</div>
+    <div style='font-size:13px;font-weight:600;color:#7C2D12;margin-top:2px'>{_sk} · {_ss["origin"]} → {_ss["destination"]}</div>
+    <div style='font-size:11px;color:#9A3412;margin-top:1px'>Last status: {_ss.get("status","Unknown")}. Investigate and update scan immediately.</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+            _stale_col1, _stale_col2 = st.columns([1, 1])
+            if _stale_col1.button(f"View {_sk}", key=f"stale_track_{_sk}", use_container_width=True):
+                st.session_state.track_number = _sk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
+            if _stale_col2.button("Dismiss", key=f"stale_dismiss_{_sk}", use_container_width=True):
+                st.session_state.stale_watchdog_dismissed.add(_sk); st.rerun()
 
         for i, order in enumerate(st.session_state.partner_deliveries):
             oid = order["order_id"]
