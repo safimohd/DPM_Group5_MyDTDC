@@ -192,6 +192,8 @@ with st.sidebar:
         st.session_state.pending_nav = "My Shipments"; st.rerun()
     if st.button("🗓  My Pickups", key="sidebar_pickups", use_container_width=True):
         st.session_state.pending_nav = "My Pickups"; st.rerun()
+    if st.button("📍  My Saved Addresses", key="sidebar_saved_addr", use_container_width=True):
+        st.session_state.pending_nav = "My Saved Addresses"; st.rerun()
     # Delay alerts in sidebar (User role only)
     _sb_delayed = [k for k, v in st.session_state.shipments.items() if v.get("status") == "Delayed"]
     if _sb_delayed and st.session_state.app_role == "User":
@@ -403,7 +405,7 @@ L.polyline([[{lat_partner},{lng_partner}],[{(lat_dest+lat_partner)/2},{(lng_dest
 # ══════════════════════════════════════════════════════════════════════════════
 
 if st.session_state.app_role == "User":
-    pages = ["Home","Book a Pickup","Track Shipment","Track Pickup","My Shipments","My Pickups","Wallet","Help & Support"]
+    pages = ["Home","Book a Pickup","Track Shipment","Track Pickup","My Shipments","My Pickups","Wallet","Help & Support","My Saved Addresses"]
     if st.session_state.pending_nav in pages:
         st.session_state.nav = st.session_state.pending_nav
         st.session_state.pending_nav = None
@@ -908,8 +910,7 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
         ai_status = "GPT-5 nano is ready" if get_secret("OPENAI_API_KEY") and OpenAI else "Smart reply mode active · no API key needed"
         st.info(f"{ai_status}. The assistant uses only sample records from this prototype, not DTDC live systems.")
 
-        # Auto-show active orders summary — no reference number needed
-        st.markdown("#### Your active orders")
+        # Active orders collapsible section
         active_orders_found = False
         order_ref_from_card = None
 
@@ -919,9 +920,10 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
         # Contents icon fallback when no photo is attached
         CONTENTS_ICON = {"Documents":"📄","Clothing":"👕","Electronics":"📱","Personal items":"🎒","Other":"📦"}
 
-        if all_shipments or all_pickups:
+        total_active = len(all_shipments) + len(all_pickups)
+        with st.expander(f"📦  Your active orders ({total_active})", expanded=False):
+         if all_shipments or all_pickups:
             active_orders_found = True
-            # Show all orders — no cap. Use 2-column grid so photos don't get too small.
             total_orders = len(all_shipments) + len(all_pickups)
             order_cols = st.columns(min(2, total_orders))
             col_idx = 0
@@ -984,31 +986,24 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                         st.session_state.support_reference_auto = bid
                         st.rerun()
                 col_idx += 1
-        else:
+         else:
             st.caption("No active orders found in this session.")
 
-        st.markdown("---")
-        service = st.selectbox("Service type", list(SUPPORT_MENU), key="support_service")
-        categories = list(SUPPORT_MENU[service])
-        if st.session_state.get("support_category") not in categories:
-            st.session_state.support_category = categories[0]
-        category = st.selectbox("Help category", categories, key="support_category")
-        topics = SUPPORT_MENU[service][category]
-        if st.session_state.get("support_topic") not in topics:
-            st.session_state.support_topic = topics[0]
-        topic = st.selectbox("What do you need help with?", topics, key="support_topic")
-        chat_topic = f"{service} / {category} / {topic}"
+        # Hardcode a stable topic so the chat doesn't reset on every render
+        service = "Intracity"
+        category = "General Information"
+        topic = "General query"
+        chat_topic = "DTDC Support"
         if st.session_state.get("active_chat_topic") != chat_topic:
             st.session_state.chat = []
             st.session_state.active_chat_topic = chat_topic
             st.session_state.pending_support_prompt = None
-            st.caption("Changing the help topic starts a fresh conversation.")
 
         st.markdown("#### Common questions")
-        suggestions = SUPPORT_SUGGESTIONS.get(topic, SUPPORT_SUGGESTIONS.get(category, [f"I need help with {topic.lower()}.","What should I do next?"]))
+        suggestions = ["Where is my shipment?", "How do I reschedule a pickup?", "What should I do next?"]
         question_cols = st.columns(min(3, len(suggestions)))
         for index, question in enumerate(suggestions):
-            if question_cols[index % len(question_cols)].button(question, key=f"support_suggestion_{index}_{service}_{category}_{topic}", use_container_width=True):
+            if question_cols[index % len(question_cols)].button(question, key=f"support_suggestion_{index}", use_container_width=True):
                 st.session_state.pending_support_prompt = question
                 st.rerun()
 
@@ -1086,6 +1081,34 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                 else:
                     st.success(f"Support request SR{uuid.uuid4().hex[:7].upper()} created in this demo session under {category}.")
 
+    elif selected == "My Saved Addresses":
+        header("My Saved Addresses", "Reuse a saved address to book your next pickup faster.")
+        if not st.session_state.saved_addresses:
+            st.markdown(f"""<div style='background:#F4F7FA;border-radius:12px;padding:32px 24px;text-align:center;color:{MUTED}'>
+  <div style='font-size:40px;margin-bottom:10px'>📍</div>
+  <div style='font-size:15px;font-weight:600;color:{INK};margin-bottom:6px'>No saved addresses yet</div>
+  <div style='font-size:13px'>After you book a pickup, tick "Save this address" and it will appear here for one-tap reuse.</div>
+</div>""", unsafe_allow_html=True)
+        else:
+            for _idx, _sa in enumerate(st.session_state.saved_addresses):
+                _c1, _c2 = st.columns([5, 1])
+                with _c1:
+                    st.markdown(f"""<div style='background:#fff;border:1px solid #E3EAF0;border-radius:10px;padding:12px 16px;margin-bottom:8px'>
+  <div style='font-weight:700;color:{NAVY};font-size:14px'>📍 {_sa['label']}</div>
+  <div style='font-size:12px;color:{INK};margin-top:4px'>{_sa.get('house','')} {_sa.get('road','')}</div>
+  <div style='font-size:12px;color:{MUTED}'>{_sa.get('area','')}, {_sa.get('city','')}, {_sa.get('state','')} — {_sa.get('pincode','')}</div>
+</div>""", unsafe_allow_html=True)
+                with _c2:
+                    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+                    if st.button("Book", key=f"saved_book_{_idx}", use_container_width=True, type="primary"):
+                        for _fld in ("house","road","area","city","state","pincode"):
+                            st.session_state[f"address_{_fld}"] = _sa.get(_fld, "")
+                        st.session_state.pending_nav = "Book a Pickup"
+                        st.rerun()
+                    if st.button("Remove", key=f"saved_del_{_idx}", use_container_width=True):
+                        st.session_state.saved_addresses.pop(_idx)
+                        st.rerun()
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ROLE: DELIVERY PARTNER
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1119,10 +1142,38 @@ elif st.session_state.app_role == "Delivery Partner":
   </div>
 </div>""", unsafe_allow_html=True)
             _stale_col1, _stale_col2 = st.columns([1, 1])
+            _stale_expand_key = f"stale_expanded_{_sk}"
             if _stale_col1.button(f"View {_sk}", key=f"stale_track_{_sk}", use_container_width=True):
-                st.session_state.track_number = _sk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
+                st.session_state[_stale_expand_key] = not st.session_state.get(_stale_expand_key, False)
+                st.rerun()
             if _stale_col2.button("Dismiss", key=f"stale_dismiss_{_sk}", use_container_width=True):
                 st.session_state.stale_watchdog_dismissed.add(_sk); st.rerun()
+            # Inline shipment detail panel (toggled by View button)
+            if st.session_state.get(_stale_expand_key):
+                _journey = _ss.get("journey", [])
+                _latest_scan = _journey[-1] if _journey else None
+                _last_scan_loc = _latest_scan.get("location","Unknown") if _latest_scan else "Unknown"
+                _last_scan_time = _latest_scan.get("time","Unknown") if _latest_scan else "Unknown"
+                _last_scan_note = _latest_scan.get("note","") if _latest_scan else ""
+                st.markdown(f"""<div style='background:#FFF;border:1.5px solid #E3EAF0;border-radius:10px;padding:16px;margin-bottom:12px'>
+  <div style='font-size:13px;font-weight:700;color:{NAVY};margin-bottom:10px'>📋 Shipment details — {_sk}</div>
+  <div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px'>
+    <div><span style='color:{MUTED}'>Origin</span><br><b>{_ss.get("origin","")}</b></div>
+    <div><span style='color:{MUTED}'>Destination</span><br><b>{_ss.get("destination","")}</b></div>
+    <div><span style='color:{MUTED}'>Contents</span><br><b>{_ss.get("contents","")}</b></div>
+    <div><span style='color:{MUTED}'>Weight</span><br><b>{_ss.get("weight","")}</b></div>
+    <div><span style='color:{MUTED}'>Current status</span><br><b style='color:#D71920'>{_ss.get("status","")}</b></div>
+    <div><span style='color:{MUTED}'>ETA</span><br><b>{_ss.get("eta","")}</b></div>
+  </div>
+  <div style='margin-top:12px;padding:10px;background:#FFF7ED;border-radius:8px;font-size:12px'>
+    <div style='font-weight:700;color:#C2410C;margin-bottom:4px'>Last scan location</div>
+    <div style='color:{INK}'>{_last_scan_loc} · {_last_scan_time}</div>
+    {f"<div style='color:{MUTED};margin-top:2px'>{_last_scan_note}</div>" if _last_scan_note else ""}
+  </div>
+  <div style='margin-top:10px;font-size:12px;color:{MUTED}'>
+    <b>Action required:</b> Locate the parcel at the last known hub and update the scan to unblock delivery.
+  </div>
+</div>""", unsafe_allow_html=True)
 
         for i, order in enumerate(st.session_state.partner_deliveries):
             oid = order["order_id"]
