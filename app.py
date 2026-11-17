@@ -73,8 +73,8 @@ def db():
 def sample_shipments():
     today = date.today()
     return {
-        "D1234567890": {"consignment_no":"D1234567890","recipient":"Aarav Mehta","origin":"Bengaluru, Karnataka","destination":"Mumbai, Maharashtra","status":"In transit","eta":(today+timedelta(days=2)).isoformat(),"updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Indiranagar, Bengaluru","time":"Today, 10:42 AM","done":True},{"title":"Arrived at Bengaluru hub","place":"Bengaluru, Karnataka","time":"Today, 02:15 PM","done":True},{"title":"In transit to destination","place":"Next scan pending","time":"On the way","done":False},{"title":"Out for delivery","place":"Mumbai, Maharashtra","time":"Estimated delivery day","done":False}],"delivery_partner":"Will be shared when out for delivery"},
-        "D9876543210": {"consignment_no":"D9876543210","recipient":"Demo Receiver","origin":"Delhi, NCR","destination":"Pune, Maharashtra","status":"Out for delivery","eta":date.today().isoformat(),"updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Connaught Place, Delhi","time":"Yesterday, 09:10 AM","done":True},{"title":"Arrived at Pune hub","place":"Pune, Maharashtra","time":"Today, 06:20 AM","done":True},{"title":"Out for delivery","place":"Pune, Maharashtra","time":"Today, 09:05 AM","done":True},{"title":"Delivered","place":"Your delivery address","time":"Pending","done":False}],"delivery_partner":"Rohit S."}
+        "D1234567890": {"consignment_no":"D1234567890","recipient":"Aarav Mehta","origin":"Bengaluru, Karnataka","destination":"Mumbai, Maharashtra","status":"In transit","eta":(today+timedelta(days=2)).isoformat(),"overall_eta_label":f"Expected delivery by {(today+timedelta(days=2)).strftime('%a, %d %b')} · 2 days away","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Indiranagar, Bengaluru","time":"Today, 10:42 AM","done":True,"phase_eta":None},{"title":"Arrived at Bengaluru hub","place":"Bengaluru, Karnataka","time":"Today, 02:15 PM","done":True,"phase_eta":None},{"title":"In transit to destination","place":"Next scan pending","time":"On the way","done":False,"phase_eta":"Expected at Mumbai hub by 11 PM tonight"},{"title":"Out for delivery","place":"Mumbai, Maharashtra","time":"Estimated delivery day","done":False,"phase_eta":f"Expected out for delivery on {(today+timedelta(days=2)).strftime('%d %b')}"}],"delivery_partner":"Will be shared when out for delivery"},
+        "D9876543210": {"consignment_no":"D9876543210","recipient":"Demo Receiver","origin":"Delhi, NCR","destination":"Pune, Maharashtra","status":"Out for delivery","eta":date.today().isoformat(),"overall_eta_label":f"Expected delivery today · {date.today().strftime('%d %b')} · Out for delivery now","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Connaught Place, Delhi","time":"Yesterday, 09:10 AM","done":True,"phase_eta":None},{"title":"Arrived at Pune hub","place":"Pune, Maharashtra","time":"Today, 06:20 AM","done":True,"phase_eta":None},{"title":"Out for delivery","place":"Pune, Maharashtra","time":"Today, 09:05 AM","done":True,"phase_eta":None},{"title":"Delivered","place":"Your delivery address","time":"Pending","done":False,"phase_eta":"Expected by 6 PM today"}],"delivery_partner":"Rohit S."}
     }
 
 def sample_partner_deliveries():
@@ -641,9 +641,22 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
             cols = st.columns(3)
             for col, label, value in zip(cols, ["CURRENT STATUS","ESTIMATED DELIVERY","LAST UPDATED"],[shipment["status"],shipment["eta"],shipment["updated"]]):
                 col.markdown(f"<div class='kpi'><div class='kpi-label'>{label}</div><div class='kpi-value'>{value}</div></div>", unsafe_allow_html=True)
+            # Overall ETA banner
+            overall_eta = shipment.get("overall_eta_label", f"Estimated delivery: {shipment['eta']}")
+            st.markdown(f"""<div style='background:linear-gradient(135deg,{NAVY} 0%,#1a3a5c 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px'>
+  <div style='font-size:28px'>📦</div>
+  <div>
+    <div style='color:#fff;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;opacity:0.7;margin-bottom:2px'>Final Delivery ETA</div>
+    <div style='color:#fff;font-size:16px;font-weight:700'>{overall_eta}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
             a, b = st.columns([1.2, .8])
             with a:
-                st.markdown(f"<div class='card'><div class='card-title'>Parcel journey</div><div class='card-sub'>{shipment['origin']} → {shipment['destination']}</div><div class='timeline'>"+"".join(f"<div class='event {' ' if e['done'] else 'future'}'><b>{e['title']}</b><small>{e['place']} · {e['time']}</small></div>" for e in shipment["events"])+"</div></div>", unsafe_allow_html=True)
+                def _event_html(e):
+                    cls = "event" if e["done"] else "event future"
+                    eta_line = f"<div style='font-size:11px;color:#D71920;font-weight:600;margin-top:3px'>🕐 {e['phase_eta']}</div>" if e.get("phase_eta") else ""
+                    return f"<div class='{cls}'><b>{e['title']}</b><small>{e['place']} · {e['time']}</small>{eta_line}</div>"
+                st.markdown(f"<div class='card'><div class='card-title'>Parcel journey</div><div class='card-sub'>{shipment['origin']} → {shipment['destination']}</div><div class='timeline'>"+"".join(_event_html(e) for e in shipment["events"])+"</div></div>", unsafe_allow_html=True)
             with b:
                 st.markdown(f"<div class='card'><div class='card-title'>Delivery details</div><div class='card-sub'>Partner details appear here when available.</div><p><b>Delivery partner</b><br>{shipment['delivery_partner']}</p><div class='feature-note'>ETA is an estimate based on latest available shipment information.</div></div>", unsafe_allow_html=True)
                 if shipment["status"] == "Out for delivery":
@@ -698,6 +711,14 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                 tl += "</div>"
                 st.markdown(tl, unsafe_allow_html=True)
                 if status == "Pickup partner on the way":
+                    st.markdown(f"""<div style='background:#FFF3E0;border:1.5px solid #FF8F00;border-radius:10px;padding:12px 16px;margin:10px 0;display:flex;align-items:center;gap:12px'>
+  <div style='font-size:22px'>🛵</div>
+  <div>
+    <div style='font-size:11px;color:#E65100;font-weight:700;letter-spacing:0.06em;text-transform:uppercase'>Partner ETA</div>
+    <div style='font-size:15px;font-weight:700;color:#BF360C'>Arriving in ~15 mins</div>
+    <div style='font-size:11px;color:#795548;margin-top:2px'>Keep your parcel packed and ready at the pickup address</div>
+  </div>
+</div>""", unsafe_allow_html=True)
                     if st.button("📍  Track pickup partner", key="trackpu_"+p.get("booking_id",""), type="primary"):
                         st.session_state.track_pickup_id = p.get("booking_id"); st.session_state.pending_nav = "Track Pickup"; st.rerun()
                 if p.get("photo_data"):
