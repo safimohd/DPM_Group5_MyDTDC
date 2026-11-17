@@ -405,11 +405,19 @@ L.polyline([[{lat_partner},{lng_partner}],[{(lat_dest+lat_partner)/2},{(lng_dest
 # ══════════════════════════════════════════════════════════════════════════════
 
 if st.session_state.app_role == "User":
-    pages = ["Home","Book a Pickup","Track Shipment","Track Pickup","My Shipments","My Pickups","Wallet","Help & Support","My Saved Addresses"]
-    if st.session_state.pending_nav in pages:
+    pages = ["Home","Book a Pickup","Track Shipment","Track Pickup","My Shipments","My Pickups","Wallet","Help & Support"]
+    # My Saved Addresses is sidebar-only — handle pending_nav before the radio renders
+    if st.session_state.pending_nav == "My Saved Addresses":
+        st.session_state.nav = "My Saved Addresses"
+        st.session_state.pending_nav = None
+    elif st.session_state.pending_nav in pages:
         st.session_state.nav = st.session_state.pending_nav
         st.session_state.pending_nav = None
-    selected = st.radio("Navigation", pages, horizontal=True, label_visibility="collapsed", key="nav")
+    # Only show radio when not on the sidebar-only page
+    if st.session_state.get("nav") != "My Saved Addresses":
+        selected = st.radio("Navigation", pages, horizontal=True, label_visibility="collapsed", key="nav")
+    else:
+        selected = "My Saved Addresses"
 
     # ── HOME ──────────────────────────────────────────────────────────────────
     if selected == "Home":
