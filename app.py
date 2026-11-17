@@ -412,36 +412,56 @@ if st.session_state.app_role == "User":
             else:
                 location_component(triggered=False, key="mydtdc_location_component", default=None)
 
-            # Show satellite map preview so user can confirm the detected spot
+            # Show satellite map + ground-level photo so user can confirm the detected spot
             if st.session_state.get("location_permission_granted") and st.session_state.get("location_lat"):
                 lat = st.session_state.location_lat
                 lng = st.session_state.location_lng
                 confirmed = st.session_state.get("location_confirmed", False)
                 if not confirmed:
+                    # Load ground-level campus photo (IIMB Hostel Block area)
+                    import os as _os
+                    _b64_path = _os.path.join(_os.path.dirname(__file__), "iimb_ground_photo.b64")
+                    _ground_b64 = ""
+                    if _os.path.exists(_b64_path):
+                        with open(_b64_path) as _f:
+                            _ground_b64 = _f.read().strip()
+
                     sat_html = f"""
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<div style="font-family:Inter,sans-serif;font-size:13px;color:#102A43;font-weight:600;margin-bottom:6px">
+<div style="font-family:Inter,sans-serif;font-size:13px;color:#102A43;font-weight:600;margin-bottom:8px">
   📍 Is this your pickup location? Confirm before proceeding.
 </div>
-<div id="satmap" style="height:260px;border-radius:12px;overflow:hidden;border:2px solid #2563EB;"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+  <div>
+    <div style="font-size:11px;color:#627D98;font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">🛰 Satellite view</div>
+    <div id="satmap" style="height:220px;border-radius:10px;overflow:hidden;border:2px solid #2563EB;"></div>
+  </div>
+  <div>
+    <div style="font-size:11px;color:#627D98;font-weight:600;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">📸 Ground view — what you see here</div>
+    <div style="height:220px;border-radius:10px;overflow:hidden;border:2px solid #CBD5E0;background:#F4F7FA;display:flex;align-items:center;justify-content:center;">
+      {'<img src="data:image/png;base64,' + _ground_b64 + '" style="width:100%;height:100%;object-fit:cover;" />' if _ground_b64 else '<span style="color:#627D98;font-size:12px;">Photo not available</span>'}
+    </div>
+    <div style="font-size:10px;color:#627D98;margin-top:4px;">IIM Bangalore campus · Hostel Block area</div>
+  </div>
+</div>
 <script>
 (function(){{
-  var map = L.map('satmap', {{zoomControl:true}}).setView([{lat},{lng}], 19);
+  var map = L.map('satmap', {{zoomControl:false}}).setView([{lat},{lng}], 19);
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
     {{maxZoom:20, attribution:'Tiles © Esri'}}
   ).addTo(map);
   var pin = L.divIcon({{
-    html: '<div style="background:#D71920;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)">📍</div>',
-    iconSize:[32,32], iconAnchor:[16,16], className:''
+    html: '<div style="background:#D71920;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)">📍</div>',
+    iconSize:[28,28], iconAnchor:[14,14], className:''
   }});
-  L.marker([{lat},{lng}], {{icon:pin}}).addTo(map).bindPopup('<b>Detected location</b><br>Lat {lat:.5f}, Lng {lng:.5f}').openPopup();
+  L.marker([{lat},{lng}], {{icon:pin}}).addTo(map);
 }})();
 </script>
 <div style="font-size:11px;color:#627D98;margin-top:6px">Lat {lat:.5f} · Lng {lng:.5f} · Satellite imagery © Esri</div>
 """
-                    components.html(sat_html, height=310)
+                    components.html(sat_html, height=320)
                     if st.button("✓  Yes, this is my location — use it", type="primary", key="confirm_location"):
                         st.session_state.location_confirmed = True
                         st.rerun()
