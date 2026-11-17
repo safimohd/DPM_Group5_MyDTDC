@@ -18,7 +18,7 @@ try:
 except ImportError:
     OpenAI = None
 
-st.set_page_config(page_title="MyDTDC | Ship with confidence", page_icon="📦", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="MyDTDC | Ship with confidence", page_icon="📦", layout="wide", initial_sidebar_state="auto")
 location_component = components.declare_component("mydtdc_location", path=str(Path(__file__).parent / "location_component"))
 NAVY, RED, PALE, INK, MUTED = "#102A43", "#D71920", "#F4F7FA", "#243B53", "#627D98"
 st.markdown(f"""
@@ -31,7 +31,7 @@ html,body,[class*="css"]{{font-family:Inter,system-ui,sans-serif;color:{INK}}}.s
 .hero{{background:linear-gradient(120deg,#102A43,#174B73);color:#fff;border-radius:20px;padding:28px 30px;margin-bottom:18px}}.hero h1{{font-size:30px;line-height:1.15;margin:0 0 8px;letter-spacing:-.8px;color:white}}.hero p{{margin:0;color:#D9E7F2;font-size:14px}}.hero-chip{{display:inline-block;margin-top:16px;border:1px solid #ffffff42;border-radius:999px;padding:7px 11px;font-size:11px;color:#EFF6FB}}
 .hero-partner{{background:linear-gradient(120deg,#5C0A0A,#8B1A1A);color:#fff;border-radius:20px;padding:28px 30px;margin-bottom:18px}}.hero-partner h1{{font-size:30px;line-height:1.15;margin:0 0 8px;letter-spacing:-.8px;color:white}}.hero-partner p{{margin:0;color:#FFD9D9;font-size:14px}}
 .card{{background:white;border:1px solid #E3EAF0;border-radius:16px;padding:19px;box-shadow:0 3px 14px #102a4308;margin-bottom:14px}}.card-title{{font-weight:750;color:{NAVY};font-size:16px;margin-bottom:4px}}.card-sub{{color:{MUTED};font-size:12px;margin-bottom:14px}}.kpi{{background:white;border:1px solid #E3EAF0;border-radius:14px;padding:15px}}.kpi-label{{color:{MUTED};font-size:11px}}.kpi-value{{color:{NAVY};font-size:18px;font-weight:750;margin-top:4px}}
-.status{{display:inline-block;background:#E8F7EF;color:#16794B;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700}}.status-warn{{background:#FFF5E5;color:#9A6400}}.status-red{{background:#FFE9E9;color:#8B0000}}.timeline{{border-left:2px solid #D9E2EC;margin:10px 0 8px 8px;padding-left:19px}}.event{{position:relative;padding:1px 0 17px}}.event:before{{content:"";width:10px;height:10px;border-radius:50%;background:#2F855A;border:2px solid white;position:absolute;left:-25px;top:4px;box-shadow:0 0 0 1px #2F855A}}.event.future:before{{background:white;box-shadow:0 0 0 1px #9FB3C8}}.event b{{color:{NAVY};font-size:13px}}.event small{{display:block;color:{MUTED};margin-top:3px;font-size:11px}}.feature-note{{color:{MUTED};font-size:11px;padding:10px 12px;background:#F4F7FA;border-radius:10px}}
+.status{{display:inline-block;background:#E8F7EF;color:#16794B;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700}}.status-warn{{background:#FFF5E5;color:#9A6400}}.status-red{{background:#FFE9E9;color:#8B0000}}.status-delay{{background:#FEF3C7;color:#92400E;border:1px solid #FCD34D}}.timeline{{border-left:2px solid #D9E2EC;margin:10px 0 8px 8px;padding-left:19px}}.event{{position:relative;padding:1px 0 17px}}.event:before{{content:"";width:10px;height:10px;border-radius:50%;background:#2F855A;border:2px solid white;position:absolute;left:-25px;top:4px;box-shadow:0 0 0 1px #2F855A}}.event.future:before{{background:white;box-shadow:0 0 0 1px #9FB3C8}}.event b{{color:{NAVY};font-size:13px}}.event small{{display:block;color:{MUTED};margin-top:3px;font-size:11px}}.feature-note{{color:{MUTED};font-size:11px;padding:10px 12px;background:#F4F7FA;border-radius:10px}}
 .order-summary-card{{background:#F0F7FF;border:1px solid #BFDBFE;border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer}}.order-summary-card:hover{{background:#DBEAFE}}.partner-order-card{{background:white;border:1px solid #E3EAF0;border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px #102a4308}}
 div.stButton>button{{border-radius:10px;font-weight:650}}div[data-testid="stForm"]{{background:white;border:1px solid #E3EAF0;padding:18px;border-radius:15px}}.footer{{text-align:center;color:#829AB1;font-size:11px;padding:16px 0 2px}}@media(max-width:700px){{.hero h1{{font-size:24px}}.hero{{padding:22px}}.brandbar{{padding:12px 14px}}}}
 </style>""", unsafe_allow_html=True)
@@ -74,7 +74,8 @@ def sample_shipments():
     today = date.today()
     return {
         "D1234567890": {"consignment_no":"D1234567890","recipient":"Aarav Mehta","origin":"Bengaluru, Karnataka","destination":"Mumbai, Maharashtra","status":"In transit","eta":(today+timedelta(days=2)).isoformat(),"overall_eta_label":f"Expected delivery by {(today+timedelta(days=2)).strftime('%a, %d %b')} · 2 days away","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Indiranagar, Bengaluru","time":"Today, 10:42 AM","done":True,"phase_eta":None},{"title":"Arrived at Bengaluru hub","place":"Bengaluru, Karnataka","time":"Today, 02:15 PM","done":True,"phase_eta":None},{"title":"In transit to destination","place":"Next scan pending","time":"On the way","done":False,"phase_eta":"Expected at Mumbai hub by 11 PM tonight"},{"title":"Out for delivery","place":"Mumbai, Maharashtra","time":"Estimated delivery day","done":False,"phase_eta":f"Expected out for delivery on {(today+timedelta(days=2)).strftime('%d %b')}"}],"delivery_partner":"Will be shared when out for delivery"},
-        "D9876543210": {"consignment_no":"D9876543210","recipient":"Demo Receiver","origin":"Delhi, NCR","destination":"Pune, Maharashtra","status":"Out for delivery","eta":date.today().isoformat(),"overall_eta_label":f"Expected delivery today · {date.today().strftime('%d %b')} · Out for delivery now","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Connaught Place, Delhi","time":"Yesterday, 09:10 AM","done":True,"phase_eta":None},{"title":"Arrived at Pune hub","place":"Pune, Maharashtra","time":"Today, 06:20 AM","done":True,"phase_eta":None},{"title":"Out for delivery","place":"Pune, Maharashtra","time":"Today, 09:05 AM","done":True,"phase_eta":None},{"title":"Delivered","place":"Your delivery address","time":"Pending","done":False,"phase_eta":"Expected by 6 PM today"}],"delivery_partner":"Rohit S."}
+        "D9876543210": {"consignment_no":"D9876543210","recipient":"Demo Receiver","origin":"Delhi, NCR","destination":"Pune, Maharashtra","status":"Out for delivery","eta":date.today().isoformat(),"overall_eta_label":f"Expected delivery today · {date.today().strftime('%d %b')} · Out for delivery now","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Connaught Place, Delhi","time":"Yesterday, 09:10 AM","done":True,"phase_eta":None},{"title":"Arrived at Pune hub","place":"Pune, Maharashtra","time":"Today, 06:20 AM","done":True,"phase_eta":None},{"title":"Out for delivery","place":"Pune, Maharashtra","time":"Today, 09:05 AM","done":True,"phase_eta":None},{"title":"Delivered","place":"Your delivery address","time":"Pending","done":False,"phase_eta":"Expected by 6 PM today"}],"delivery_partner":"Rohit S."},
+        "D7777777777": {"consignment_no":"D7777777777","recipient":"Priya Sharma","origin":"Chennai, Tamil Nadu","destination":"Hyderabad, Telangana","status":"Delayed","eta":(today+timedelta(days=1)).isoformat(),"overall_eta_label":f"Delayed — originally expected {date.today().strftime('%d %b')} · now expected {(today+timedelta(days=1)).strftime('%a, %d %b')}","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Chennai, Tamil Nadu","time":"Yesterday, 08:30 AM","done":True,"phase_eta":None},{"title":"Arrived at Chennai hub","place":"Chennai Hub","time":"Yesterday, 02:00 PM","done":True,"phase_eta":None},{"title":"In transit — delayed","place":"Held at Bengaluru sorting facility","time":"Today, 06:45 AM","done":False,"phase_eta":"Delay of approx. 24 hrs due to sorting backlog"},{"title":"Out for delivery","place":"Hyderabad, Telangana","time":"Rescheduled","done":False,"phase_eta":f"Expected out for delivery {(today+timedelta(days=1)).strftime('%d %b')}"}],"delivery_partner":"Will be shared when out for delivery"}
     }
 
 def sample_partner_deliveries():
@@ -163,6 +164,27 @@ with bar_right:
         st.rerun()
 
 st.markdown("<hr style='margin:0 0 18px;border:none;border-top:1px solid #E3EAF0'>", unsafe_allow_html=True)
+
+# ── Sidebar — persistent support shortcut and delay alerts ────────────────────
+with st.sidebar:
+    st.markdown(f"<div style='font-size:16px;font-weight:800;color:{NAVY};padding-bottom:4px'>MyDTDC</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:11px;color:#627D98;margin-bottom:14px'>Quick access</div>", unsafe_allow_html=True)
+    if st.button("💬  Help & Support", key="sidebar_help", use_container_width=True):
+        st.session_state.pending_nav = "Help & Support"; st.rerun()
+    if st.button("📦  My Shipments", key="sidebar_shipments", use_container_width=True):
+        st.session_state.pending_nav = "My Shipments"; st.rerun()
+    if st.button("🗓  My Pickups", key="sidebar_pickups", use_container_width=True):
+        st.session_state.pending_nav = "My Pickups"; st.rerun()
+    # Delay alerts in sidebar
+    _sb_delayed = [k for k, v in st.session_state.shipments.items() if v.get("status") == "Delayed"]
+    if _sb_delayed:
+        st.markdown("<hr style='margin:12px 0;border:none;border-top:1px solid #E3EAF0'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:11px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px'>⚠️ Delay alerts</div>", unsafe_allow_html=True)
+        for _dk in _sb_delayed:
+            _ds = st.session_state.shipments[_dk]
+            st.markdown(f"<div style='font-size:11px;color:#78350F;background:#FEF3C7;border-radius:8px;padding:8px 10px;margin-bottom:6px'><b>{_dk}</b><br>{_ds['origin']} → {_ds['destination']}</div>", unsafe_allow_html=True)
+            if st.button(f"Track {_dk}", key=f"sb_track_{_dk}", use_container_width=True):
+                st.session_state.track_number = _dk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
 
@@ -377,12 +399,30 @@ if st.session_state.app_role == "User":
                 st.session_state.pending_nav = "Book a Pickup"; st.rerun()
             if st.button("View all shipments", use_container_width=True):
                 st.session_state.pending_nav = "My Shipments"; st.rerun()
+        # Delay notification banner on Home
+        delayed_shipments = [k for k, v in st.session_state.shipments.items() if v.get("status") == "Delayed"]
+        if delayed_shipments:
+            for dk in delayed_shipments:
+                ds = st.session_state.shipments[dk]
+                st.markdown(f"""<div style='background:#FFF3CD;border:1.5px solid #FFC107;border-radius:12px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:14px'>
+  <div style='font-size:26px'>⚠️</div>
+  <div style='flex:1'>
+    <div style='font-size:12px;font-weight:700;color:#856404;text-transform:uppercase;letter-spacing:0.06em'>Shipment Delayed</div>
+    <div style='font-size:14px;font-weight:600;color:#533f03;margin-top:3px'>{dk} · {ds["origin"]} → {ds["destination"]}</div>
+    <div style='font-size:12px;color:#78600a;margin-top:2px'>{ds.get("overall_eta_label","")}</div>
+  </div>
+  <div></div>
+</div>""", unsafe_allow_html=True)
+                if st.button(f"Track {dk}", key=f"home_delay_track_{dk}"):
+                    st.session_state.track_number = dk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
+
         st.markdown("<div class='card-title' style='margin:8px 0 12px'>Your recent shipments</div>", unsafe_allow_html=True)
         cols = st.columns(2)
         for col, key in zip(cols, list(st.session_state.shipments)[:2]):
             s = st.session_state.shipments[key]
             with col:
-                st.markdown(f"<div class='card'><div style='display:flex;justify-content:space-between'><b style='color:{NAVY}'>{key}</b><span class='status'>{s['status']}</span></div><div style='font-size:12px;color:{MUTED};margin-top:10px'>{s['origin']} → {s['destination']}</div><div style='font-size:12px;margin-top:10px'>Estimated delivery: <b>{s['eta']}</b></div></div>", unsafe_allow_html=True)
+                status_badge = "status-delay" if s["status"] == "Delayed" else "status"
+                st.markdown(f"<div class='card'><div style='display:flex;justify-content:space-between'><b style='color:{NAVY}'>{key}</b><span class='{status_badge}'>{s['status']}</span></div><div style='font-size:12px;color:{MUTED};margin-top:10px'>{s['origin']} → {s['destination']}</div><div style='font-size:12px;margin-top:10px'>Estimated delivery: <b>{s['eta']}</b></div></div>", unsafe_allow_html=True)
 
     # ── BOOK A PICKUP ─────────────────────────────────────────────────────────
     elif selected == "Book a Pickup":
@@ -641,9 +681,20 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
             cols = st.columns(3)
             for col, label, value in zip(cols, ["CURRENT STATUS","ESTIMATED DELIVERY","LAST UPDATED"],[shipment["status"],shipment["eta"],shipment["updated"]]):
                 col.markdown(f"<div class='kpi'><div class='kpi-label'>{label}</div><div class='kpi-value'>{value}</div></div>", unsafe_allow_html=True)
-            # Overall ETA banner
+            # Overall ETA banner — orange/red when delayed, navy otherwise
             overall_eta = shipment.get("overall_eta_label", f"Estimated delivery: {shipment['eta']}")
-            st.markdown(f"""<div style='background:linear-gradient(135deg,{NAVY} 0%,#1a3a5c 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px'>
+            is_delayed = shipment.get("status") == "Delayed"
+            if is_delayed:
+                st.markdown(f"""<div style='background:linear-gradient(135deg,#B45309 0%,#92400E 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px;border:1.5px solid #F59E0B'>
+  <div style='font-size:28px'>⚠️</div>
+  <div>
+    <div style='color:#FDE68A;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px'>Shipment Delayed</div>
+    <div style='color:#fff;font-size:16px;font-weight:700'>{overall_eta}</div>
+    <div style='color:#FDE68A;font-size:12px;margin-top:4px'>We apologise for the inconvenience. See timeline below for details.</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+            else:
+                st.markdown(f"""<div style='background:linear-gradient(135deg,{NAVY} 0%,#1a3a5c 100%);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px'>
   <div style='font-size:28px'>📦</div>
   <div>
     <div style='color:#fff;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;opacity:0.7;margin-bottom:2px'>Final Delivery ETA</div>
@@ -729,6 +780,56 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
 </div>""", unsafe_allow_html=True)
                 if p.get("priority"):
                     st.caption("Priority pickup requested · availability and price require confirmation by a real booking service.")
+                # Reschedule / Cancel — only available for active (not collected) pickups
+                bid = p.get("booking_id","")
+                cancelled_key = f"pickup_cancelled_{bid}"
+                reschedule_key = f"pickup_reschedule_open_{bid}"
+                rescheduled_key = f"pickup_rescheduled_{bid}"
+                if status not in ("Parcel collected","Cancelled") and not st.session_state.get(cancelled_key):
+                    st.markdown("<div style='margin-top:10px'></div>", unsafe_allow_html=True)
+                    act_col1, act_col2 = st.columns(2)
+                    if act_col1.button("🗓  Reschedule", key=f"btn_reschedule_{bid}", use_container_width=True):
+                        st.session_state[reschedule_key] = not st.session_state.get(reschedule_key, False)
+                        st.rerun()
+                    if act_col2.button("✖  Cancel pickup", key=f"btn_cancel_{bid}", use_container_width=True):
+                        st.session_state[f"pickup_cancel_confirm_{bid}"] = True
+                        st.rerun()
+                    # Reschedule form
+                    if st.session_state.get(reschedule_key) and not st.session_state.get(rescheduled_key):
+                        with st.form(f"reschedule_form_{bid}"):
+                            st.markdown("**Pick a new date and time slot**")
+                            new_date = st.date_input("New pickup date", value=date.today()+timedelta(days=1), min_value=date.today()+timedelta(days=1), key=f"new_date_{bid}")
+                            new_slot = st.selectbox("New time slot", ["9 AM – 12 PM","12 PM – 3 PM","3 PM – 6 PM"], key=f"new_slot_{bid}")
+                            submitted = st.form_submit_button("Confirm reschedule", type="primary", use_container_width=True)
+                            if submitted:
+                                for pr in st.session_state.pickup_requests:
+                                    if pr.get("booking_id") == bid:
+                                        pr["pickup_date"] = new_date.isoformat()
+                                        pr["time_slot"] = new_slot
+                                        pr["status"] = "Pickup request received"
+                                        break
+                                st.session_state[rescheduled_key] = True
+                                st.session_state[reschedule_key] = False
+                                st.rerun()
+                    if st.session_state.get(rescheduled_key):
+                        st.success(f"Pickup {bid} rescheduled. DTDC will confirm the new slot within a few hours.")
+                    # Cancel confirmation
+                    if st.session_state.get(f"pickup_cancel_confirm_{bid}"):
+                        st.warning(f"Are you sure you want to cancel pickup {bid}? This cannot be undone in this demo.")
+                        yes_col, no_col = st.columns(2)
+                        if yes_col.button("Yes, cancel it", key=f"confirm_yes_{bid}", type="primary", use_container_width=True):
+                            for pr in st.session_state.pickup_requests:
+                                if pr.get("booking_id") == bid:
+                                    pr["status"] = "Cancelled"
+                                    break
+                            st.session_state[cancelled_key] = True
+                            st.session_state[f"pickup_cancel_confirm_{bid}"] = False
+                            st.rerun()
+                        if no_col.button("No, keep it", key=f"confirm_no_{bid}", use_container_width=True):
+                            st.session_state[f"pickup_cancel_confirm_{bid}"] = False
+                            st.rerun()
+                elif st.session_state.get(cancelled_key) or status == "Cancelled":
+                    st.markdown(f"<div style='background:#FEE2E2;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#991B1B;font-weight:600'>✖ Pickup cancelled. No partner will be assigned.</div>", unsafe_allow_html=True)
 
     # ── WALLET ────────────────────────────────────────────────────────────────
     elif selected == "Wallet":
@@ -745,6 +846,8 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
 
     # ── HELP & SUPPORT ────────────────────────────────────────────────────────
     elif selected == "Help & Support":
+        # If user arrived from an order card, jump straight to chat section
+        _jump_to_chat = bool(st.session_state.get("support_reference_auto",""))
         header("Help & Support", "Choose a topic or tap an active order below — no reference number needed.")
         ai_status = "GPT-5 nano is ready" if get_secret("OPENAI_API_KEY") and OpenAI else "Smart reply mode active · no API key needed"
         st.info(f"{ai_status}. The assistant uses only sample records from this prototype, not DTDC live systems.")
@@ -853,6 +956,13 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                 st.session_state.pending_support_prompt = question
                 st.rerun()
 
+        # Anchor injected so JS can scroll here when arriving from an order card
+        st.markdown('<a id="support-chat-anchor"></a>', unsafe_allow_html=True)
+        if _jump_to_chat:
+            st.components.v1.html("""<script>
+            window.parent.document.getElementById('support-chat-anchor') &&
+            window.parent.document.getElementById('support-chat-anchor').scrollIntoView({behavior:'smooth',block:'start'});
+            </script>""", height=0)
         st.markdown("#### Chat with MyDTDC support")
         # Auto-fill reference if user tapped an order card
         auto_ref = st.session_state.get("support_reference_auto","")
@@ -901,9 +1011,13 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
         for role_msg, msg in st.session_state.chat:
             with st.chat_message(role_msg):
                 st.write(msg)
-        prompt = st.chat_input("Type your question about this topic")
-        if prompt:
-            reply_to_support(prompt)
+        # Inline chat input — always visible in the page flow (no floating bar)
+        with st.form("support_chat_form", clear_on_submit=True):
+            inp_col, btn_col = st.columns([4, 1])
+            user_msg = inp_col.text_input("Type your question", label_visibility="collapsed", placeholder="Type your question about this topic…", key="support_chat_input")
+            send = btn_col.form_submit_button("Send", type="primary", use_container_width=True)
+        if send and user_msg.strip():
+            reply_to_support(user_msg.strip())
             st.rerun()
 
         with st.expander("Create a support request instead"):
@@ -994,9 +1108,33 @@ elif st.session_state.app_role == "Delivery Partner":
 
     # ── PICKUPS TODAY ─────────────────────────────────────────────────────────
     elif partner_selected == "Pickups Today":
-        header("Pickups Today", f"{len(st.session_state.partner_pickups)} parcels to collect · all from Bengaluru South zone")
+        # Merge user pickup_requests that are partner-assigned into the partner view
+        PARTNER_ASSIGNED_STATUSES = {"Pickup partner assigned", "Pickup partner on the way"}
+        _user_as_partner = []
+        for _upr in st.session_state.pickup_requests:
+            _ustatus = _upr.get("status","")
+            if _ustatus in PARTNER_ASSIGNED_STATUSES or _ustatus not in {"Pickup request received","DTDC confirmed","Parcel collected","Cancelled"}:
+                _user_as_partner.append({
+                    "order_id": _upr.get("booking_id",""),
+                    "sender_area": _upr.get("area","") or _upr.get("pickup_address","")[:40],
+                    "sender_name": _upr.get("sender_name",""),
+                    "weight": _upr.get("weight",""),
+                    "contents": _upr.get("contents",""),
+                    "lat": _upr.get("pickup_latitude") or 12.9343,
+                    "lng": _upr.get("pickup_longitude") or 77.5953,
+                    "slot": _upr.get("time_slot",""),
+                    "status": _ustatus,
+                    "distance_km": "0.0",
+                    "note": _upr.get("note",""),
+                    "photo_data": _upr.get("photo_data"),
+                    "_from_user": True,
+                })
+        # User orders shown first, then static demo orders
+        _all_partner_pickups = _user_as_partner + st.session_state.partner_pickups
+        total_pu_count = len(_all_partner_pickups)
+        header("Pickups Today", f"{total_pu_count} parcel{'s' if total_pu_count != 1 else ''} to collect · Bengaluru South zone")
 
-        for i, order in enumerate(st.session_state.partner_pickups):
+        for i, order in enumerate(_all_partner_pickups):
             oid = order["order_id"]
             done_key = f"pickup_done_{oid}"
             called_key = f"pickup_called_{oid}"
@@ -1005,9 +1143,17 @@ elif st.session_state.app_role == "Delivery Partner":
                 st.markdown(f"<div class='card' style='opacity:0.5'><span class='status'>Collected ✓</span> &nbsp; <b>{oid}</b> — {order['sender_area']}</div>", unsafe_allow_html=True)
                 continue
 
-            with st.expander(f"🧳  {oid}  ·  {order['sender_area']}  ·  {order['slot']}", expanded=i == 0):
+            # Tag user-linked orders with a special indicator
+            _from_user = order.get("_from_user", False)
+            _expander_label = f"{'🔗 ' if _from_user else ''}🧳  {oid}  ·  {order['sender_area']}  ·  {order['slot']}"
+            with st.expander(_expander_label, expanded=i == 0):
+                if _from_user:
+                    st.markdown(f"<div style='background:#EFF6FF;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#1D4ED8;font-weight:600'>🔗 Booked through MyDTDC app — customer-submitted order</div>", unsafe_allow_html=True)
                 col_info, col_map = st.columns([1, 1.4])
                 with col_info:
+                    _photo_html = ""
+                    if order.get("photo_data"):
+                        _photo_html = f"<div style='margin-top:10px'><div style='font-size:11px;color:#627D98;font-weight:600;margin-bottom:4px'>📷 Item photo from sender</div><img src='data:image/jpeg;base64,{order['photo_data']}' style='width:100%;max-height:120px;object-fit:cover;border-radius:8px;border:1px solid #BFDBFE' alt='Item photo'/></div>"
                     st.markdown(f"""
 <div class='partner-order-card'>
   <div class='card-title'>{oid}</div>
@@ -1019,6 +1165,7 @@ elif st.session_state.app_role == "Delivery Partner":
     <b>Distance:</b> {order['distance_km']} km from your current location
   </div>
   {f"<div style='margin-top:8px;padding:8px;background:#FFFBEB;border-radius:8px;font-size:12px;color:#78350F'>📋 Note: {order['note']}</div>" if order.get('note') else ""}
+  {_photo_html}
   <div style='margin-top:12px;padding:10px;background:#FFF0F0;border-radius:8px;font-size:12px;color:#8B0000'>
     🔒 Sender phone is not shown. Use the button below to connect.
   </div>
@@ -1050,8 +1197,8 @@ elif st.session_state.app_role == "Delivery Partner":
                     components.html(map_code, height=230)
                     st.caption(f"Map is demo only. Navigate to: {order['sender_area']}, Bengaluru.")
 
-        completed_pu = sum(1 for o in st.session_state.partner_pickups if st.session_state.get(f"pickup_done_{o['order_id']}"))
-        total_pu = len(st.session_state.partner_pickups)
+        completed_pu = sum(1 for o in _all_partner_pickups if st.session_state.get(f"pickup_done_{o['order_id']}"))
+        total_pu = len(_all_partner_pickups)
         st.markdown(f"<div class='feature-note' style='margin-top:14px'>Progress: {completed_pu} of {total_pu} pickups completed today.</div>", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
