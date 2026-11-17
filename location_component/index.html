@@ -15,8 +15,13 @@
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      () => setValue({permission:"granted"}),
-      e => setValue({error:e.code === 1 ? "Location permission was declined." : "Could not read the current location."}),
+      pos => setValue({
+        permission: "granted",
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      }),
+      e => setValue({error: e.code === 1 ? "Location permission was declined." : "Could not read the current location."}),
       {enableHighAccuracy:true, timeout:12000, maximumAge:60000}
     );
   }
@@ -24,12 +29,10 @@
     const msg = event.data;
     if (!msg || msg.type !== "streamlit:render") return;
     const args = msg.args || {};
-    // Only fire geolocation when triggered=true is explicitly passed
     if (args.triggered === true && !fired) {
       fired = true;
       locate();
     }
-    // Reset fired flag when a new trigger cycle starts (triggered flips false->true)
     if (args.triggered === false) {
       fired = false;
     }

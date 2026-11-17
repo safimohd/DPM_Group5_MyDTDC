@@ -119,6 +119,9 @@ if "iimb_address_prefilled" not in st.session_state: st.session_state.iimb_addre
 # location: only triggered on explicit button click
 if "location_triggered" not in st.session_state: st.session_state.location_triggered = False
 if "location_permission_granted" not in st.session_state: st.session_state.location_permission_granted = False
+if "location_lat" not in st.session_state: st.session_state.location_lat = None
+if "location_lng" not in st.session_state: st.session_state.location_lng = None
+if "location_confirmed" not in st.session_state: st.session_state.location_confirmed = False
 # camera: only shown after explicit button click
 if "show_camera" not in st.session_state: st.session_state.show_camera = False
 # role selector
@@ -393,18 +396,63 @@ if st.session_state.app_role == "User":
                     if geo.get("permission") == "granted":
                         st.session_state.location_permission_granted = True
                         st.session_state.location_triggered = False
-                        st.caption("Location permission granted. Address prefilled with IIM Bangalore for this demo.")
+                        # Store actual coordinates if returned
+                        if geo.get("lat") and geo.get("lng"):
+                            st.session_state.location_lat = geo["lat"]
+                            st.session_state.location_lng = geo["lng"]
+                        else:
+                            # Demo fallback: IIM Bangalore coordinates
+                            st.session_state.location_lat = 12.9343
+                            st.session_state.location_lng = 77.5953
                     elif geo.get("error"):
                         err = geo["error"]
                         if "declined" not in err.lower():
                             st.caption(f"Location note: {err}")
                         st.session_state.location_triggered = False
             else:
-                # Render component idle (no geolocation request)
                 location_component(triggered=False, key="mydtdc_location_component", default=None)
 
-            if st.session_state.get("location_permission_granted"):
-                st.caption("Location ready. Address prefilled as IIM Bangalore for this presentation demo.")
+            # Show satellite map preview so user can confirm the detected spot
+            if st.session_state.get("location_permission_granted") and st.session_state.get("location_lat"):
+                lat = st.session_state.location_lat
+                lng = st.session_state.location_lng
+                confirmed = st.session_state.get("location_confirmed", False)
+                if not confirmed:
+                    sat_html = f"""
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div style="font-family:Inter,sans-serif;font-size:13px;color:#102A43;font-weight:600;margin-bottom:6px">
+  📍 Is this your pickup location? Confirm before proceeding.
+</div>
+<div id="satmap" style="height:200px;border-radius:12px;overflow:hidden;border:2px solid #2563EB;"></div>
+<script>
+(function(){{
+  var map = L.map('satmap').setView([{lat},{lng}], 17);
+  L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
+    {{maxZoom:19, attribution:'Tiles © Esri'}}
+  ).addTo(map);
+  var pin = L.divIcon({{
+    html: '<div style="background:#D71920;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)">📍</div>',
+    iconSize:[32,32], iconAnchor:[16,16], className:''
+  }});
+  L.marker([{lat},{lng}], {{icon:pin}}).addTo(map).bindPopup('<b>Detected location</b><br>Lat {lat:.5f}, Lng {lng:.5f}').openPopup();
+}})();
+</script>
+<div style="font-size:11px;color:#627D98;margin-top:6px">Lat {lat:.5f} · Lng {lng:.5f} · Satellite imagery © Esri</div>
+"""
+                    components.html(sat_html, height=240)
+                    if st.button("✓  Yes, this is my location — use it", type="primary", key="confirm_location"):
+                        st.session_state.location_confirmed = True
+                        st.rerun()
+                    if st.button("✗  Wrong location — enter manually", key="reject_location"):
+                        st.session_state.location_permission_granted = False
+                        st.session_state.location_lat = None
+                        st.session_state.location_lng = None
+                        st.session_state.location_confirmed = False
+                        st.rerun()
+                else:
+                    st.success(f"Location confirmed: Lat {lat:.5f}, Lng {lng:.5f}. Address prefilled as IIM Bangalore for this demo.")
             else:
                 st.caption("The pickup address is prefilled as IIM Bangalore for this demo.")
 
@@ -493,6 +541,10 @@ if st.session_state.app_role == "User":
                     save_pickup(record)
                     st.session_state.last_pickup = record
                     st.session_state.show_camera = False
+                    st.session_state.location_confirmed = False
+                    st.session_state.location_permission_granted = False
+                    st.session_state.location_lat = None
+                    st.session_state.location_lng = None
                     st.success(f"Pickup requested! Booking number: {record['booking_id']}.")
                     st.info(f"{pickup_date.strftime('%d %b %Y')} · {slot} · {'Priority pickup requested' if priority else 'Standard pickup'}")
                     st.session_state.pending_nav = "My Pickups"
@@ -629,8 +681,11 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                     if st.button("📍  Track pickup partner", key="trackpu_"+p.get("booking_id",""), type="primary"):
                         st.session_state.track_pickup_id = p.get("booking_id"); st.session_state.pending_nav = "Track Pickup"; st.rerun()
                 if p.get("photo_data"):
-                    import base64
-                    st.image(base64.b64decode(p["photo_data"]), caption="Pickup location photo · demo session only", width=280)
+                    st.markdown(f"""
+<div style='margin-top:8px'>
+  <div style='font-size:12px;color:{MUTED};margin-bottom:4px'>📷 Item / location photo (taken at booking)</div>
+  <img src="data:image/jpeg;base64,{p['photo_data']}" style="max-width:260px;height:140px;object-fit:cover;border-radius:10px;border:1px solid #E3EAF0" alt="Pickup photo"/>
+</div>""", unsafe_allow_html=True)
                 if p.get("priority"):
                     st.caption("Priority pickup requested · availability and price require confirmation by a real booking service.")
 
@@ -661,23 +716,69 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
         all_shipments = list(st.session_state.shipments.items())
         all_pickups = st.session_state.pickup_requests
 
+        # Contents icon fallback when no photo is attached
+        CONTENTS_ICON = {"Documents":"📄","Clothing":"👕","Electronics":"📱","Personal items":"🎒","Other":"📦"}
+
         if all_shipments or all_pickups:
             active_orders_found = True
-            order_cols = st.columns(min(3, len(all_shipments) + len(all_pickups)))
+            # Show all orders — no cap. Use 2-column grid so photos don't get too small.
+            total_orders = len(all_shipments) + len(all_pickups)
+            order_cols = st.columns(min(2, total_orders))
             col_idx = 0
+
             for key, s in all_shipments:
                 with order_cols[col_idx % len(order_cols)]:
-                    st.markdown(f"<div class='order-summary-card'><div style='font-weight:700;color:{NAVY};font-size:13px'>{key}</div><div style='font-size:11px;color:{MUTED};margin-top:3px'>{s['origin']} → {s['destination']}</div><div style='margin-top:6px'><span class='status'>{s['status']}</span></div><div style='font-size:11px;color:{MUTED};margin-top:5px'>ETA: {s['eta']}</div></div>", unsafe_allow_html=True)
+                    icon = CONTENTS_ICON.get(s.get("contents",""), "📦")
+                    # Shipments don't carry photos in demo data — show a large icon tile
+                    st.markdown(f"""
+<div class='order-summary-card'>
+  <div style='display:flex;gap:10px;align-items:flex-start'>
+    <div style='width:54px;height:54px;min-width:54px;border-radius:10px;background:#E8F4FF;display:flex;align-items:center;justify-content:center;font-size:26px;border:1px solid #BFDBFE'>{icon}</div>
+    <div style='flex:1'>
+      <div style='font-weight:700;color:{NAVY};font-size:13px'>{key}</div>
+      <div style='font-size:11px;color:{MUTED};margin-top:2px'>{s['origin']} → {s['destination']}</div>
+      <div style='margin-top:5px'><span class='status'>{s['status']}</span></div>
+      <div style='font-size:11px;color:{MUTED};margin-top:4px'>ETA: {s['eta']}</div>
+    </div>
+  </div>
+</div>""", unsafe_allow_html=True)
                     if st.button(f"Get help for {key}", key=f"help_ship_{key}", use_container_width=True):
                         order_ref_from_card = key
                         st.session_state.support_reference_auto = key
                         st.rerun()
                 col_idx += 1
-            for p in all_pickups[:3]:
+
+            for p in all_pickups:   # ALL pickups — no cap
                 bid = p.get("booking_id","")
                 pstatus = p.get("status","")
+                photo_data = p.get("photo_data")
+                contents = p.get("contents","Other")
+                icon = CONTENTS_ICON.get(contents, "📦")
                 with order_cols[col_idx % len(order_cols)]:
-                    st.markdown(f"<div class='order-summary-card'><div style='font-weight:700;color:{NAVY};font-size:13px'>{bid}</div><div style='font-size:11px;color:{MUTED};margin-top:3px'>{p.get('pickup_date','')} · {p.get('time_slot','')}</div><div style='margin-top:6px'><span class='status status-warn'>{pstatus}</span></div><div style='font-size:11px;color:{MUTED};margin-top:5px'>{p.get('contents','')} · {p.get('weight','')}</div></div>", unsafe_allow_html=True)
+                    if photo_data:
+                        # Show the actual item/location photo the user took at booking time
+                        st.markdown(f"""
+<div class='order-summary-card'>
+  <div style='font-weight:700;color:{NAVY};font-size:13px;margin-bottom:6px'>{bid}</div>
+  <img src="data:image/jpeg;base64,{photo_data}" style="width:100%;height:90px;object-fit:cover;border-radius:8px;margin-bottom:7px;border:1px solid #BFDBFE" alt="Item photo"/>
+  <div style='font-size:11px;color:{MUTED}'>{p.get("pickup_date","")} · {p.get("time_slot","")}</div>
+  <div style='margin-top:5px'><span class='status status-warn'>{pstatus}</span></div>
+  <div style='font-size:11px;color:{MUTED};margin-top:4px'>{contents} · {p.get("weight","")}</div>
+</div>""", unsafe_allow_html=True)
+                    else:
+                        # No photo — show contents icon tile
+                        st.markdown(f"""
+<div class='order-summary-card'>
+  <div style='display:flex;gap:10px;align-items:flex-start'>
+    <div style='width:54px;height:54px;min-width:54px;border-radius:10px;background:#FFF5E5;display:flex;align-items:center;justify-content:center;font-size:26px;border:1px solid #FED7AA'>{icon}</div>
+    <div style='flex:1'>
+      <div style='font-weight:700;color:{NAVY};font-size:13px'>{bid}</div>
+      <div style='font-size:11px;color:{MUTED};margin-top:2px'>{p.get("pickup_date","")} · {p.get("time_slot","")}</div>
+      <div style='margin-top:5px'><span class='status status-warn'>{pstatus}</span></div>
+      <div style='font-size:11px;color:{MUTED};margin-top:4px'>{contents} · {p.get("weight","")}</div>
+    </div>
+  </div>
+</div>""", unsafe_allow_html=True)
                     if st.button(f"Get help for {bid}", key=f"help_pu_{bid}", use_container_width=True):
                         order_ref_from_card = bid
                         st.session_state.support_reference_auto = bid
