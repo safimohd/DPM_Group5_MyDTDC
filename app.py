@@ -70,6 +70,15 @@ IIMB_PICKUP_ADDRESS = {
 def db():
     return get_db()
 
+@st.cache_data(ttl=3600)
+def _load_ground_photo() -> str:
+    """Read the IIMB ground photo once per session and cache it."""
+    _b64_path = Path(__file__).parent / "iimb_ground_photo.b64"
+    if _b64_path.exists():
+        return _b64_path.read_text().strip()
+    return ""
+
+@st.cache_data
 def sample_shipments():
     today = date.today()
     return {
@@ -78,6 +87,7 @@ def sample_shipments():
         "D7777777777": {"consignment_no":"D7777777777","recipient":"Priya Sharma","origin":"Chennai, Tamil Nadu","destination":"Hyderabad, Telangana","status":"Delayed","eta":(today+timedelta(days=1)).isoformat(),"overall_eta_label":f"Delayed — originally expected {date.today().strftime('%d %b')} · now expected {(today+timedelta(days=1)).strftime('%a, %d %b')}","updated":datetime.now().strftime("%d %b, %I:%M %p"),"events":[{"title":"Shipment picked up","place":"Chennai, Tamil Nadu","time":"Yesterday, 08:30 AM","done":True,"phase_eta":None},{"title":"Arrived at Chennai hub","place":"Chennai Hub","time":"Yesterday, 02:00 PM","done":True,"phase_eta":None},{"title":"In transit — delayed","place":"Held at Bengaluru sorting facility","time":"Today, 06:45 AM","done":False,"phase_eta":"Delay of approx. 24 hrs due to sorting backlog"},{"title":"Out for delivery","place":"Hyderabad, Telangana","time":"Rescheduled","done":False,"phase_eta":f"Expected out for delivery {(today+timedelta(days=1)).strftime('%d %b')}"}],"delivery_partner":"Will be shared when out for delivery"}
     }
 
+@st.cache_data
 def sample_partner_deliveries():
     """Deliveries the partner must drop off today — destinations near IIM Bangalore."""
     return [
@@ -86,6 +96,7 @@ def sample_partner_deliveries():
         {"order_id":"DLV-7861","recipient_area":"JP Nagar, Phase 3","recipient_name":"S. Reddy","weight":"2.4 kg","contents":"Clothing","lat":12.9063,"lng":77.5857,"eta_window":"1 PM – 4 PM","status":"Pending delivery","distance_km":"3.1"},
     ]
 
+@st.cache_data
 def sample_partner_pickups():
     """Pickups the partner must collect today — sources near IIM Bangalore."""
     return [
@@ -407,39 +418,29 @@ if st.session_state.app_role == "User":
                 st.session_state.pending_nav = "Book a Pickup"; st.rerun()
             if st.button("View all shipments", use_container_width=True):
                 st.session_state.pending_nav = "My Shipments"; st.rerun()
-        # Delay corner toast notifications (dismiss via X button)
+        # Delay notification toasts — compact inline cards with a working ✕ dismiss button
         delayed_shipments = [k for k, v in st.session_state.shipments.items() if v.get("status") == "Delayed"]
         active_toasts = [dk for dk in delayed_shipments if dk not in st.session_state.toast_dismissed]
-        if active_toasts:
-            # Render toast dismiss buttons — one per shipment
-            for dk in active_toasts:
-                if st.button("✕", key=f"toast_dismiss_{dk}", help=f"Dismiss alert for {dk}"):
-                    st.session_state.toast_dismissed.add(dk)
-                    st.rerun()
-            # Build the stacked toast HTML (bottom-right fixed)
-            toast_items = ""
-            for idx, dk in enumerate(active_toasts):
-                ds = st.session_state.shipments[dk]
-                bottom_offset = 24 + idx * 100
-                toast_items += f"""
-<div id="toast_{dk}" style="
-  position:fixed;bottom:{bottom_offset}px;right:24px;z-index:9999;
-  background:#1a1a1a;color:#fff;border-radius:10px;
-  padding:12px 14px 12px 14px;width:280px;
-  box-shadow:0 4px 20px rgba(0,0,0,0.35);
-  display:flex;align-items:flex-start;gap:10px;
-  border-left:4px solid #FFC107;
-  font-family:sans-serif;
-">
-  <div style='font-size:18px;line-height:1.3'>⚠️</div>
-  <div style='flex:1;min-width:0'>
-    <div style='font-size:11px;font-weight:700;color:#FFC107;text-transform:uppercase;letter-spacing:0.07em'>Shipment Delayed</div>
-    <div style='font-size:13px;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{dk}</div>
-    <div style='font-size:11px;color:#ccc;margin-top:2px'>{ds["origin"]} → {ds["destination"]}</div>
+        for dk in active_toasts:
+            ds = st.session_state.shipments[dk]
+            # Layout: notification content on the left, ✕ button on the far right
+            _tcol_content, _tcol_btn = st.columns([10, 1])
+            with _tcol_content:
+                st.markdown(f"""<div style='background:#1C1C1E;color:#fff;border-radius:10px;
+  padding:11px 14px;margin-bottom:4px;display:flex;align-items:flex-start;
+  gap:10px;border-left:4px solid #FFC107;'>
+  <div style='font-size:17px;line-height:1.4'>⚠️</div>
+  <div style='flex:1'>
+    <div style='font-size:11px;font-weight:700;color:#FFC107;text-transform:uppercase;letter-spacing:.07em'>Shipment Delayed</div>
+    <div style='font-size:13px;font-weight:600;margin-top:3px'>{dk} &nbsp;·&nbsp; {ds["origin"]} → {ds["destination"]}</div>
     <div style='font-size:11px;color:#aaa;margin-top:2px'>{ds.get("overall_eta_label","")}</div>
   </div>
-</div>"""
-            st.markdown(toast_items, unsafe_allow_html=True)
+</div>""", unsafe_allow_html=True)
+            with _tcol_btn:
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                if st.button("✕", key=f"toast_dismiss_{dk}", help="Dismiss this alert"):
+                    st.session_state.toast_dismissed.add(dk)
+                    st.rerun()
 
         # Stale-status watchdog: alert if no scan in 48+ hours
         # Demo: D7777777777 is hardcoded as stale (last scan >48h ago)
@@ -503,13 +504,8 @@ if st.session_state.app_role == "User":
                 lng = st.session_state.location_lng
                 confirmed = st.session_state.get("location_confirmed", False)
                 if not confirmed:
-                    # Load ground-level campus photo (IIMB Hostel Block area)
-                    import os as _os
-                    _b64_path = _os.path.join(_os.path.dirname(__file__), "iimb_ground_photo.b64")
-                    _ground_b64 = ""
-                    if _os.path.exists(_b64_path):
-                        with open(_b64_path) as _f:
-                            _ground_b64 = _f.read().strip()
+                    # Load ground-level campus photo from cache (read once per session)
+                    _ground_b64 = _load_ground_photo()
 
                     sat_html = f"""
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -561,16 +557,21 @@ if st.session_state.app_role == "User":
             else:
                 st.caption("The pickup address is prefilled as IIM Bangalore for this demo.")
 
-            # Saved address quick-select (outside form so selection triggers rerun to pre-fill)
+            # Saved address quick-select — guard against infinite rerun loop
+            # Track the last address we already filled so we rerun only once per new selection
+            if "last_saved_fill" not in st.session_state:
+                st.session_state.last_saved_fill = None
             if st.session_state.saved_addresses:
                 addr_labels = ["-- Select a saved address --"] + [a["label"] for a in st.session_state.saved_addresses]
                 selected_saved = st.selectbox("Quick-fill a saved address", addr_labels, key="saved_addr_select")
-                if selected_saved != "-- Select a saved address --":
+                if (selected_saved != "-- Select a saved address --"
+                        and selected_saved != st.session_state.last_saved_fill):
                     match = next((a for a in st.session_state.saved_addresses if a["label"] == selected_saved), None)
                     if match:
                         for field in ("house","road","area","city","state","pincode"):
                             st.session_state[f"address_{field}"] = match.get(field, "")
-                        st.rerun()
+                        st.session_state.last_saved_fill = selected_saved
+                        st.rerun()  # only fires once per new selection; subsequent renders skip this branch
 
             with st.form("pickup_form"):
                 st.markdown("**Pickup details**")
