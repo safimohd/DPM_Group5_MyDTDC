@@ -115,6 +115,14 @@ if "wallet_balance" not in st.session_state: st.session_state.wallet_balance = 2
 if "chat" not in st.session_state: st.session_state.chat = []
 if "nav" not in st.session_state: st.session_state.nav = "Home"
 if "pending_nav" not in st.session_state: st.session_state.pending_nav = None
+# saved addresses for repeat booking
+if "saved_addresses" not in st.session_state: st.session_state.saved_addresses = [
+    {"label": "IIMB Main Gate", "house": "Main Gate", "road": "Bannerghatta Road", "area": "IIM Bangalore", "city": "Bengaluru", "state": "Karnataka", "pincode": "560076"},
+]
+# toast dismissal tracking per shipment
+if "toast_dismissed" not in st.session_state: st.session_state.toast_dismissed = set()
+# stale-status watchdog: shipments with no scan in 48h (demo: D7777777777 is hardcoded stale)
+if "stale_watchdog_dismissed" not in st.session_state: st.session_state.stale_watchdog_dismissed = set()
 if "pickup_requests_loaded" not in st.session_state: st.session_state.pickup_requests_loaded = False
 if "iimb_address_prefilled" not in st.session_state: st.session_state.iimb_address_prefilled = False
 # location: only triggered on explicit button click
@@ -399,22 +407,59 @@ if st.session_state.app_role == "User":
                 st.session_state.pending_nav = "Book a Pickup"; st.rerun()
             if st.button("View all shipments", use_container_width=True):
                 st.session_state.pending_nav = "My Shipments"; st.rerun()
-        # Delay notification banner on Home
+        # Delay corner toast notifications (dismiss via X button)
         delayed_shipments = [k for k, v in st.session_state.shipments.items() if v.get("status") == "Delayed"]
-        if delayed_shipments:
-            for dk in delayed_shipments:
+        active_toasts = [dk for dk in delayed_shipments if dk not in st.session_state.toast_dismissed]
+        if active_toasts:
+            # Render toast dismiss buttons — one per shipment
+            for dk in active_toasts:
+                if st.button("✕", key=f"toast_dismiss_{dk}", help=f"Dismiss alert for {dk}"):
+                    st.session_state.toast_dismissed.add(dk)
+                    st.rerun()
+            # Build the stacked toast HTML (bottom-right fixed)
+            toast_items = ""
+            for idx, dk in enumerate(active_toasts):
                 ds = st.session_state.shipments[dk]
-                st.markdown(f"""<div style='background:#FFF3CD;border:1.5px solid #FFC107;border-radius:12px;padding:14px 18px;margin-bottom:12px;display:flex;align-items:center;gap:14px'>
-  <div style='font-size:26px'>⚠️</div>
-  <div style='flex:1'>
-    <div style='font-size:12px;font-weight:700;color:#856404;text-transform:uppercase;letter-spacing:0.06em'>Shipment Delayed</div>
-    <div style='font-size:14px;font-weight:600;color:#533f03;margin-top:3px'>{dk} · {ds["origin"]} → {ds["destination"]}</div>
-    <div style='font-size:12px;color:#78600a;margin-top:2px'>{ds.get("overall_eta_label","")}</div>
+                bottom_offset = 24 + idx * 100
+                toast_items += f"""
+<div id="toast_{dk}" style="
+  position:fixed;bottom:{bottom_offset}px;right:24px;z-index:9999;
+  background:#1a1a1a;color:#fff;border-radius:10px;
+  padding:12px 14px 12px 14px;width:280px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.35);
+  display:flex;align-items:flex-start;gap:10px;
+  border-left:4px solid #FFC107;
+  font-family:sans-serif;
+">
+  <div style='font-size:18px;line-height:1.3'>⚠️</div>
+  <div style='flex:1;min-width:0'>
+    <div style='font-size:11px;font-weight:700;color:#FFC107;text-transform:uppercase;letter-spacing:0.07em'>Shipment Delayed</div>
+    <div style='font-size:13px;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>{dk}</div>
+    <div style='font-size:11px;color:#ccc;margin-top:2px'>{ds["origin"]} → {ds["destination"]}</div>
+    <div style='font-size:11px;color:#aaa;margin-top:2px'>{ds.get("overall_eta_label","")}</div>
   </div>
-  <div></div>
+</div>"""
+            st.markdown(toast_items, unsafe_allow_html=True)
+
+        # Stale-status watchdog: alert if no scan in 48+ hours
+        # Demo: D7777777777 is hardcoded as stale (last scan >48h ago)
+        _stale_shipments = ["D7777777777"] if "D7777777777" in st.session_state.shipments else []
+        _active_stale = [s for s in _stale_shipments if s not in st.session_state.stale_watchdog_dismissed]
+        for _sk in _active_stale:
+            _ss = st.session_state.shipments[_sk]
+            st.markdown(f"""<div style='background:#FFF7ED;border:1.5px solid #FB923C;border-radius:10px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px'>
+  <div style='font-size:20px'>🕒</div>
+  <div style='flex:1'>
+    <div style='font-size:11px;font-weight:700;color:#C2410C;text-transform:uppercase;letter-spacing:0.06em'>No scan in 48+ hours</div>
+    <div style='font-size:13px;font-weight:600;color:#7C2D12;margin-top:2px'>{_sk} · {_ss["origin"]} → {_ss["destination"]}</div>
+    <div style='font-size:11px;color:#9A3412;margin-top:1px'>Last status: {_ss.get("status","Unknown")}. DTDC has been notified to investigate.</div>
+  </div>
 </div>""", unsafe_allow_html=True)
-                if st.button(f"Track {dk}", key=f"home_delay_track_{dk}"):
-                    st.session_state.track_number = dk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
+            _stale_col1, _stale_col2 = st.columns([1, 1])
+            if _stale_col1.button(f"Track {_sk}", key=f"stale_track_{_sk}", use_container_width=True):
+                st.session_state.track_number = _sk; st.session_state.pending_nav = "Track Shipment"; st.rerun()
+            if _stale_col2.button("Dismiss", key=f"stale_dismiss_{_sk}", use_container_width=True):
+                st.session_state.stale_watchdog_dismissed.add(_sk); st.rerun()
 
         st.markdown("<div class='card-title' style='margin:8px 0 12px'>Your recent shipments</div>", unsafe_allow_html=True)
         cols = st.columns(2)
@@ -516,6 +561,17 @@ if st.session_state.app_role == "User":
             else:
                 st.caption("The pickup address is prefilled as IIM Bangalore for this demo.")
 
+            # Saved address quick-select (outside form so selection triggers rerun to pre-fill)
+            if st.session_state.saved_addresses:
+                addr_labels = ["-- Select a saved address --"] + [a["label"] for a in st.session_state.saved_addresses]
+                selected_saved = st.selectbox("Quick-fill a saved address", addr_labels, key="saved_addr_select")
+                if selected_saved != "-- Select a saved address --":
+                    match = next((a for a in st.session_state.saved_addresses if a["label"] == selected_saved), None)
+                    if match:
+                        for field in ("house","road","area","city","state","pincode"):
+                            st.session_state[f"address_{field}"] = match.get(field, "")
+                        st.rerun()
+
             with st.form("pickup_form"):
                 st.markdown("**Pickup details**")
                 c1, c2 = st.columns(2)
@@ -549,6 +605,17 @@ if st.session_state.app_role == "User":
                 c5, c6 = st.columns(2)
                 contents = c5.selectbox("What are you sending?", ["Documents","Clothing","Electronics","Personal items","Other"])
                 weight = c6.selectbox("Approx. weight", ["Up to 0.5 kg","0.5–2 kg","2–5 kg","More than 5 kg"])
+                # Upfront all-in price estimate
+                _price_map = {"Up to 0.5 kg": 99, "0.5–2 kg": 149, "2–5 kg": 249, "More than 5 kg": 349}
+                _est_price = _price_map.get(weight, 99)
+                st.markdown(f"""<div style='background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 16px;margin:6px 0 2px;display:flex;align-items:center;gap:12px'>
+  <div style='font-size:22px'>💰</div>
+  <div>
+    <div style='font-size:11px;font-weight:700;color:#1E40AF;text-transform:uppercase;letter-spacing:0.06em'>Estimated price</div>
+    <div style='font-size:20px;font-weight:800;color:#1E3A8A;margin-top:2px'>₹{_est_price}</div>
+    <div style='font-size:11px;color:#3B82F6;margin-top:1px'>All-in · includes pickup, handling and standard delivery. No hidden charges.</div>
+  </div>
+</div>""", unsafe_allow_html=True)
 
                 # Camera: only shown after user explicitly clicks the button
                 st.markdown("**Location photo (optional)**")
@@ -600,6 +667,11 @@ if st.session_state.app_role == "User":
                     }
                     save_pickup(record)
                     st.session_state.last_pickup = record
+                    # Save address for future quick-fill (avoid duplicates by pincode+house)
+                    _new_addr = {"label": f"{area or city} ({pincode})", "house": house, "road": road, "area": area, "city": city, "state": state, "pincode": pincode}
+                    _existing_keys = {(a["house"], a["pincode"]) for a in st.session_state.saved_addresses}
+                    if (house, pincode) not in _existing_keys:
+                        st.session_state.saved_addresses.append(_new_addr)
                     st.session_state.show_camera = False
                     st.session_state.location_confirmed = False
                     st.session_state.location_permission_granted = False
@@ -830,6 +902,15 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                             st.rerun()
                 elif st.session_state.get(cancelled_key) or status == "Cancelled":
                     st.markdown(f"<div style='background:#FEE2E2;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#991B1B;font-weight:600'>✖ Pickup cancelled. No partner will be assigned.</div>", unsafe_allow_html=True)
+                    # One-tap rebook after cancellation
+                    if st.button("🔄  Rebook this pickup", key=f"rebook_{bid}", use_container_width=True, type="primary"):
+                        # Pre-fill address fields from the cancelled booking
+                        for _fld, _val in [("address_house", p.get("house_number","")), ("address_road", p.get("road","")),
+                                           ("address_area", p.get("area","")), ("address_city", p.get("city","")),
+                                           ("address_state", p.get("state","")), ("address_pincode", p.get("pincode",""))]:
+                            st.session_state[_fld] = _val
+                        st.session_state.pending_nav = "Book a Pickup"
+                        st.rerun()
 
     # ── WALLET ────────────────────────────────────────────────────────────────
     elif selected == "Wallet":
@@ -1080,9 +1161,33 @@ elif st.session_state.app_role == "Delivery Partner":
                         st.session_state[called_key] = True
                     if st.session_state.get(called_key):
                         st.success("Demo relay call initiated. In the live product, your registered number and the customer's number are both masked by the DTDC relay.")
-                    if btn_col2.button("✅  Mark delivered", key=f"done_{oid}", use_container_width=True, type="primary"):
-                        st.session_state[done_key] = True
-                        st.rerun()
+                    # Verified delivery: photo proof flow
+                    _photo_step_key = f"delivery_photo_step_{oid}"
+                    _photo_data_key = f"delivery_photo_data_{oid}"
+                    if not st.session_state.get(_photo_step_key):
+                        if btn_col2.button("✅  Mark delivered", key=f"done_{oid}", use_container_width=True, type="primary"):
+                            st.session_state[_photo_step_key] = True
+                            st.rerun()
+                    else:
+                        st.markdown("<div style='background:#F0FFF4;border:1px solid #86EFAC;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:12px;color:#166534'><b>📸 Photo proof required</b> — take or upload a photo showing the parcel handed over.</div>", unsafe_allow_html=True)
+                        _proof_photo = st.file_uploader("Upload delivery photo", type=["png","jpg","jpeg"], key=f"proof_upload_{oid}", help="A photo confirms delivery for the customer's record.")
+                        _cam_key = f"delivery_cam_{oid}"
+                        if st.button("📷  Use camera instead", key=f"cam_btn_{oid}"):
+                            st.session_state[_cam_key] = True
+                            st.rerun()
+                        if st.session_state.get(_cam_key):
+                            _proof_photo = st.camera_input("Take delivery photo", key=f"cam_input_{oid}")
+                        proof_col1, proof_col2 = st.columns(2)
+                        if proof_col1.button("✅  Confirm delivery", key=f"confirm_delivered_{oid}", use_container_width=True, type="primary"):
+                            if _proof_photo:
+                                import base64 as _b64
+                                st.session_state[_photo_data_key] = _b64.b64encode(_proof_photo.getvalue()).decode("ascii")
+                            st.session_state[done_key] = True
+                            st.session_state[_photo_step_key] = False
+                            st.rerun()
+                        if proof_col2.button("Back", key=f"cancel_proof_{oid}", use_container_width=True):
+                            st.session_state[_photo_step_key] = False
+                            st.rerun()
                 with col_map:
                     map_code = f"""
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
