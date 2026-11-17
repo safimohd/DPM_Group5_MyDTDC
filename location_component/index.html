@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body><script>
 (() => {
-  let lastRequest = null;
+  let fired = false;
   function send(type, data={}) {
     window.parent.postMessage({isStreamlitMessage:true, type, ...data}, "*");
   }
@@ -21,16 +21,20 @@
     );
   }
   window.addEventListener("message", event => {
-    const msg=event.data;
+    const msg = event.data;
     if (!msg || msg.type !== "streamlit:render") return;
-    const refresh=msg.args && msg.args.refresh;
-    if (lastRequest === null || refresh !== lastRequest) {
-      lastRequest=refresh;
+    const args = msg.args || {};
+    // Only fire geolocation when triggered=true is explicitly passed
+    if (args.triggered === true && !fired) {
+      fired = true;
       locate();
+    }
+    // Reset fired flag when a new trigger cycle starts (triggered flips false->true)
+    if (args.triggered === false) {
+      fired = false;
     }
   });
   send("streamlit:componentReady", {apiVersion:1});
   send("streamlit:setFrameHeight", {height:0});
 })();
 </script></body></html>
-
