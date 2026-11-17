@@ -401,9 +401,9 @@ if st.session_state.app_role == "User":
                             st.session_state.location_lat = geo["lat"]
                             st.session_state.location_lng = geo["lng"]
                         else:
-                            # Demo fallback: IIM Bangalore coordinates
-                            st.session_state.location_lat = 12.9343
-                            st.session_state.location_lng = 77.5953
+                            # Demo fallback: Amul canteen, IIM Bangalore campus
+                            st.session_state.location_lat = 12.9318
+                            st.session_state.location_lng = 77.5962
                     elif geo.get("error"):
                         err = geo["error"]
                         if "declined" not in err.lower():
@@ -424,13 +424,13 @@ if st.session_state.app_role == "User":
 <div style="font-family:Inter,sans-serif;font-size:13px;color:#102A43;font-weight:600;margin-bottom:6px">
   📍 Is this your pickup location? Confirm before proceeding.
 </div>
-<div id="satmap" style="height:200px;border-radius:12px;overflow:hidden;border:2px solid #2563EB;"></div>
+<div id="satmap" style="height:260px;border-radius:12px;overflow:hidden;border:2px solid #2563EB;"></div>
 <script>
 (function(){{
-  var map = L.map('satmap').setView([{lat},{lng}], 17);
+  var map = L.map('satmap', {{zoomControl:true}}).setView([{lat},{lng}], 19);
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
-    {{maxZoom:19, attribution:'Tiles © Esri'}}
+    {{maxZoom:20, attribution:'Tiles © Esri'}}
   ).addTo(map);
   var pin = L.divIcon({{
     html: '<div style="background:#D71920;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.4)">📍</div>',
@@ -441,7 +441,7 @@ if st.session_state.app_role == "User":
 </script>
 <div style="font-size:11px;color:#627D98;margin-top:6px">Lat {lat:.5f} · Lng {lng:.5f} · Satellite imagery © Esri</div>
 """
-                    components.html(sat_html, height=240)
+                    components.html(sat_html, height=310)
                     if st.button("✓  Yes, this is my location — use it", type="primary", key="confirm_location"):
                         st.session_state.location_confirmed = True
                         st.rerun()
