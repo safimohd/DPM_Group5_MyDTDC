@@ -915,6 +915,30 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
         # If user arrived from an order card, jump straight to chat section
         _jump_to_chat = bool(st.session_state.get("support_reference_auto",""))
         header("Help & Support", "Choose a topic or tap an active order below — no reference number needed.")
+
+        # ── CONTACT CHANNELS ─────────────────────────────────────────────────
+        st.markdown("<div class='card-title' style='margin-bottom:10px'>Reach us directly</div>", unsafe_allow_html=True)
+        ch_col1, ch_col2 = st.columns(2)
+        with ch_col1:
+            st.markdown(f"""<div style='background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px'>
+  <div style='font-size:28px'>📞</div>
+  <div>
+    <div style='font-weight:700;font-size:14px;color:#1E3A8A'>Call us</div>
+    <div style='font-size:13px;color:#1D4ED8;font-weight:600;margin-top:2px'>1800-209-3456</div>
+    <div style='font-size:11px;color:#627D98;margin-top:2px'>Mon – Sat · 9 AM to 6 PM</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+        with ch_col2:
+            st.markdown(f"""<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:16px 18px;display:flex;align-items:center;gap:14px'>
+  <div style='font-size:28px'>✉️</div>
+  <div>
+    <div style='font-weight:700;font-size:14px;color:#14532D'>Email us</div>
+    <div style='font-size:13px;color:#16A34A;font-weight:600;margin-top:2px'>support@dtdc.com</div>
+    <div style='font-size:11px;color:#627D98;margin-top:2px'>Response within 24 hours</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
         ai_status = "GPT-5 nano is ready" if get_secret("OPENAI_API_KEY") and OpenAI else "Smart reply mode active · no API key needed"
         st.info(f"{ai_status}. The assistant uses only sample records from this prototype, not DTDC live systems.")
 
