@@ -855,12 +855,31 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                     return f"<div class='{cls}'><b>{e['title']}</b><small>{e['place']} · {e['time']}</small>{eta_line}</div>"
                 st.markdown(f"<div class='card'><div class='card-title'>Parcel journey</div><div class='card-sub'>{shipment['origin']} → {shipment['destination']}</div><div class='timeline'>"+"".join(_event_html(e) for e in shipment["events"])+"</div></div>", unsafe_allow_html=True)
             with b:
-                st.markdown(f"<div class='card'><div class='card-title'>Delivery details</div><div class='card-sub'>Partner details appear here when available.</div><p><b>Delivery partner</b><br>{shipment['delivery_partner']}</p><div class='feature-note'>ETA is an estimate based on latest available shipment information.</div></div>", unsafe_allow_html=True)
                 if shipment["status"] == "Out for delivery":
+                    # Live agent map — only shown on delivery day
+                    st.markdown(f"<div class='kpi' style='margin-bottom:12px'><div class='kpi-label'>DELIVERY PARTNER</div><div class='kpi-value' style='font-size:15px'>{shipment['delivery_partner']} &nbsp;·&nbsp; <span style='color:#16794B;font-size:13px'>📍 On the way</span></div></div>", unsafe_allow_html=True)
+                    agent_map_html = """
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="agentmap" style="height:260px;border-radius:14px;overflow:hidden;border:1px solid #E3EAF0;"></div>
+<script>
+var map=L.map('agentmap').setView([18.5204,73.8567],14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+var destIcon=L.divIcon({html:'<div style="background:#102A43;color:white;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:17px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)">🏠</div>',iconSize:[34,34],iconAnchor:[17,34],className:''});
+var agentIcon=L.divIcon({html:'<div style="background:#D71920;color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.35)">🛵</div>',iconSize:[36,36],iconAnchor:[18,18],className:''});
+L.marker([18.5204,73.8567],{icon:destIcon}).addTo(map).bindPopup('<b>Your delivery address</b><br>Pune, Maharashtra').openPopup();
+L.marker([18.5340,73.8430],{icon:agentIcon}).addTo(map).bindPopup('<b>Rohit S. — Delivery partner</b><br>~20 min away');
+L.polyline([[18.5340,73.8430],[18.5290,73.8470],[18.5240,73.8520],[18.5204,73.8567]],{color:'#D71920',weight:3,dashArray:'6,6',opacity:0.7}).addTo(map);
+</script>"""
+                    components.html(agent_map_html, height=270)
+                    st.markdown("<div style='background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:8px 14px;font-size:12px;color:#065F46;margin-bottom:10px'>🛵 <b>Rohit S.</b> is ~3.2 km away · Arriving in <b>20–35 min</b></div>", unsafe_allow_html=True)
                     if st.button("📞  Call delivery partner", key="call_partner_"+key, use_container_width=True):
                         st.session_state[f"call_status_{key}"] = True
                     if st.session_state.get(f"call_status_{key}"):
                         st.success("Demo call request ready: the live service would connect from your registered number using a masked relay. No call is placed by this prototype.")
+                    st.caption("Location shown is simulated for this usability demo. In the live product, the partner's device shares real-time GPS coordinates.")
+                else:
+                    st.markdown(f"<div class='card'><div class='card-title'>Delivery details</div><div class='card-sub'>Partner details appear here when available.</div><p><b>Delivery partner</b><br>{shipment['delivery_partner']}</p><div class='feature-note'>ETA is an estimate based on latest available shipment information.</div></div>", unsafe_allow_html=True)
                 with st.expander("Something doesn't look right?"):
                     issue = st.selectbox("Choose an issue", ["Marked delivered, but I did not receive it","Delivery attempt did not happen","Tracking has not updated","I need another kind of help"])
                     details = st.text_area("Add details", placeholder="Tell us what happened")
