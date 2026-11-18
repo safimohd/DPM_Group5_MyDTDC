@@ -979,6 +979,7 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                     if st.button(f"Get help for {key}", key=f"help_ship_{key}", use_container_width=True):
                         order_ref_from_card = key
                         st.session_state.support_reference_auto = key
+                        st.session_state.support_reference = key
                         st.rerun()
                 col_idx += 1
 
@@ -1016,6 +1017,7 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                     if st.button(f"Get help for {bid}", key=f"help_pu_{bid}", use_container_width=True):
                         order_ref_from_card = bid
                         st.session_state.support_reference_auto = bid
+                        st.session_state.support_reference = bid
                         st.rerun()
                 col_idx += 1
          else:
