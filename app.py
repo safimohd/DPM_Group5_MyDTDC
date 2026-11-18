@@ -19,6 +19,38 @@ except ImportError:
     OpenAI = None
 
 st.set_page_config(page_title="MyDTDC | Ship with confidence", page_icon="📦", layout="wide", initial_sidebar_state="auto")
+
+# ── Pincode serviceability data ──────────────────────────────────────────────
+import math as _math
+
+@st.cache_data(show_spinner=False)
+def _load_pincode_data():
+    _p = Path(__file__).parent / "pincode_data.json"
+    if _p.exists():
+        with open(_p) as f:
+            return json.load(f)
+    return {}
+
+def _check_pincode(pin: str):
+    """Return (found, serviceable, city, state, nearest_info_or_None)."""
+    data = _load_pincode_data()
+    pin = pin.strip().zfill(6)
+    if pin not in data:
+        return False, False, "", "", None
+    rec = data[pin]
+    if rec["s"] == 1:
+        return True, True, rec["city"], rec["state"], None
+    # Find nearest serviceable pincode in same state
+    lat0, lng0 = rec["lat"], rec["lng"]
+    state = rec["state"]
+    best_pin, best_dist, best_city = None, float("inf"), ""
+    for p2, r2 in data.items():
+        if r2["s"] == 1 and r2["state"] == state:
+            d = _math.sqrt((r2["lat"] - lat0)**2 + (r2["lng"] - lng0)**2) * 111
+            if d < best_dist:
+                best_dist, best_pin, best_city = d, p2, r2["city"]
+    nearest = {"pin": best_pin, "city": best_city, "km": round(best_dist, 1)} if best_pin else None
+    return True, False, rec["city"], state, nearest
 location_component = components.declare_component("mydtdc_location", path=str(Path(__file__).parent / "location_component"))
 NAVY, RED, PALE, INK, MUTED = "#102A43", "#D71920", "#F4F7FA", "#243B53", "#627D98"
 st.markdown(f"""
@@ -240,98 +272,115 @@ def load_pickups():
 
 def _smart_reply(prompt, context):
     p = prompt.lower()
-    loc_q = any(w in p for w in ["where","location","map","track","how far","distance","when","eta","arrive","coming","reach","status","update","order"])
-    cancel_q = any(w in p for w in ["cancel","reschedule","change","modify","update address","rebook","new slot","new time"])
-    agent_q = any(w in p for w in ["agent","executive","human","call","speak","talk","connect","escalate"])
-    complaint_q = any(w in p for w in ["complaint","damage","lost","missing","wrong","delay","late","not delivered"])
-    charge_q = any(w in p for w in ["charge","charges","price","pricing","cost","rate","fee","payment","how much","billing","invoice","paid","pay"])
-    after_collect_q = any(w in p for w in ["after collect","once collected","parcel collected","after pickup","what next","next step","transit","then what","consignment"])
-    delivery_q = any(w in p for w in ["deliver","delivery","receiving","receive","incoming","someone sending","being sent","arriving","shipment arriving","expecting"])
+    loc_q        = any(w in p for w in ["where","location","map","track","how far","distance","when","eta","arrive","coming","reach","status","update","order"])
+    cancel_q     = any(w in p for w in ["cancel","reschedule","change","modify","update address","rebook","new slot","new time"])
+    agent_q      = any(w in p for w in ["agent","executive","human","call","speak","talk","connect","escalate"])
+    charge_q     = any(w in p for w in ["charge","charges","price","pricing","cost","rate","fee","payment","how much","billing","invoice","paid","pay"])
+    after_collect_q = any(w in p for w in ["after collect","once collected","parcel collected","after pickup","what next","next step","then what","consignment"])
+    # "not received" / "haven't received" / "says delivered" are complaints, not delivery queries
+    not_received_q = any(ph in p for ph in ["not received","haven't received","havent received","says delivered","marked delivered","showing delivered","delivered but","never received","didn't receive","didnt receive"])
+    complaint_q  = not_received_q or any(w in p for w in ["complaint","damage","lost","missing","wrong","delay","late","not delivered"])
+    # generic delivery query only when it's NOT a complaint
+    delivery_q   = (not not_received_q) and any(w in p for w in ["incoming","someone sending","being sent","arriving","shipment arriving","expecting"])
 
-    if cancel_q:
-        ref_hint = ""
-        if context and "No sample" not in context:
-            try:
-                rec = json.loads(context); ref_hint = f" (Ref: {rec.get('booking_id') or rec.get('consignment_no','')})"
-            except Exception: pass
-        return (f"Cancellations and rescheduling{ref_hint} need to go through our operations team since a partner may already be assigned. "
-                f"Please use the support request form below, select 'Booking and Tracking' and choose 'Update booking details'. "
-                f"Our team typically responds within 2 hours during office hours.")
-    if agent_q:
-        return ("You can reach a DTDC support executive at 1800-123-3339 (toll-free, 9 AM to 6 PM, Mon to Sat). "
-                "Outside those hours, submit a support request below and we'll call you back within the next business day.")
-    if complaint_q:
-        return ("I'm sorry to hear that. For complaints about damage, delays, or missing parcels, please file a support request below "
-                "with your consignment number. Our team will investigate and respond within 24 hours.")
-    if charge_q:
-        return ("Shipping charges depend on the parcel weight, dimensions, service type (local or national), and pickup location. "
-                "You can get an instant quote on the Book a Pickup screen before confirming. "
-                "If you've already been charged and have a concern, please raise a support request below with your booking reference.")
-    if after_collect_q:
-        ref_hint = ""
-        if context and "No sample" not in context:
-            try:
-                rec = json.loads(context); ref_hint = f" for booking {rec.get('booking_id','')}" if rec.get('booking_id') else ""
-            except Exception: pass
-        return (f"Once your parcel is collected{ref_hint}, DTDC assigns a consignment number within a few hours. "
-                f"From that point you can track the shipment's journey under Track Shipment using that number. "
-                f"You'll move through: In Transit, then Out for Delivery, then Delivered. "
-                f"For intercity shipments, typical transit is 2 to 5 business days depending on the route.")
-    if delivery_q:
-        return ("To track an incoming shipment, you'll need the consignment number from the sender. "
-                "Head to Track Shipment and enter that number. You'll see the current stage, the expected delivery date, "
-                "and each checkpoint the parcel has passed through. "
-                "If the sender hasn't shared the number yet, ask them to check their MyDTDC booking confirmation.")
-
+    # ── CONTEXT-AWARE RESPONSES (order loaded) — always checked first ──────────
     if context and "No sample" not in context:
         try:
             rec = json.loads(context)
         except Exception:
             rec = {}
-        kind = rec.get("kind", "")
+        kind   = rec.get("kind", "")
         status = rec.get("status", "")
-        ref = rec.get("booking_id") or rec.get("consignment_no", "")
+        ref    = rec.get("booking_id") or rec.get("consignment_no", "")
+        eta    = rec.get("eta", "")
+        dest   = rec.get("destination", "")
+        eta_str  = f" Expected delivery: {eta}." if eta else ""
+        dest_str = f" to {dest}" if dest else ""
 
         if kind == "pickup request":
-            slot = rec.get("time_slot", "your scheduled slot")
-            pdate = rec.get("pickup_date", "")
+            slot   = rec.get("time_slot", "your scheduled slot")
+            pdate  = rec.get("pickup_date", "")
             date_str = f" on {pdate}" if pdate else ""
+            if cancel_q:
+                return (f"To cancel or reschedule pickup {ref}, please raise a support request below and select 'Booking and Tracking' > 'Update booking details'. "
+                        f"Our team will action it before the {slot} slot{date_str}.")
             if status == "Pickup partner on the way":
                 if loc_q:
-                    return (f"Your pickup partner Rahul M. is on the way to your location right now! "
-                            f"He's about 1.8 km away and should reach you in roughly 10 to 15 minutes{date_str} during {slot}. "
+                    return (f"Your pickup partner Rahul M. is on the way right now! "
+                            f"He's about 1.8 km away and should reach you in roughly 10–15 minutes{date_str} during {slot}. "
                             f"Please keep your parcel ready and stay near the pickup address. "
                             f"You can see his live position on the Track Pickup screen.")
                 return (f"Your pickup (Ref: {ref}) is active. Rahul M. is heading to you{date_str} during {slot}. "
                         f"Tap 'Track pickup partner' to follow him on the map.")
             elif status == "Parcel collected":
-                return (f"Your parcel has been collected by DTDC! Booking {ref} is now in transit. "
-                        f"You can track the shipment status under Track Shipment once a consignment number is assigned.")
+                return (f"Your parcel has been collected for booking {ref}. It is now in transit. "
+                        f"You can track the shipment under Track Shipment once a consignment number is assigned (usually within a few hours).")
             else:
-                return f"Your pickup {ref} is currently showing status: {status}. If you need more details or have a concern, please raise a support request below."
+                return (f"Your pickup {ref} is currently: {status}{date_str} during {slot}. "
+                        f"If you have a concern, please raise a support request below.")
 
         elif kind == "sample shipment":
-            eta = rec.get("eta", ""); dest = rec.get("destination", "")
-            eta_str = f" Expected delivery: {eta}." if eta else ""
-            dest_str = f" to {dest}" if dest else ""
+            if not_received_q:
+                actual_status = status
+                return (f"I can see shipment {ref}{dest_str} is currently showing '{actual_status}' in our system — not 'Delivered'.{eta_str} "
+                        f"If a different app or message is showing it as delivered, that may be a display error. "
+                        f"If you believe there is a genuine non-delivery issue, please raise a support request below with your consignment number and we will investigate within 24 hours.")
+            if complaint_q:
+                return (f"I'm sorry to hear that about shipment {ref}. Current status is '{status}'.{eta_str} "
+                        f"Please file a support request below with this consignment number and our team will investigate and respond within 24 hours.")
+            if cancel_q:
+                return (f"Shipment {ref} is already in the DTDC network (status: {status}) — it cannot be cancelled at this stage. "
+                        f"If you need to change the delivery address or add instructions, raise a support request below.")
             if status == "Out for delivery":
                 if loc_q:
-                    return (f"Your shipment {ref} is out for delivery{dest_str} today!{eta_str} "
+                    return (f"Shipment {ref} is out for delivery{dest_str} today!{eta_str} "
                             f"The delivery executive is on their route and should reach you shortly. "
                             f"Please keep your phone accessible and ensure someone is available at the address.")
-                return f"Your shipment {ref} is out for delivery{dest_str}.{eta_str} Stay available at the delivery address."
+                return f"Shipment {ref} is out for delivery{dest_str}.{eta_str} Stay available at the delivery address."
             elif "transit" in status.lower():
-                return (f"Your shipment {ref} is in transit{dest_str}.{eta_str} "
+                return (f"Shipment {ref} is in transit{dest_str}.{eta_str} "
                         f"It's moving through the DTDC network and will be out for delivery on the expected date.")
+            elif "delayed" in status.lower():
+                return (f"Shipment {ref} is currently delayed.{eta_str} "
+                        f"We apologise for the inconvenience. The revised delivery window is shown above. "
+                        f"If you need further assistance, raise a support request below.")
             elif "delivered" in status.lower():
-                return f"Your shipment {ref} has been delivered{dest_str}. If you haven't received it, please raise a support request below."
+                return (f"Shipment {ref} has been delivered{dest_str}. "
+                        f"If you haven't received it, please raise a support request below with your consignment number and our team will investigate.")
             else:
-                return f"Your shipment {ref} is currently: {status}.{eta_str} For detailed tracking, check the Track Shipment screen."
+                return f"Shipment {ref} is currently: {status}.{eta_str} For detailed tracking, check the Track Shipment screen."
 
+    # ── GENERIC KEYWORD RESPONSES (no order context loaded) ───────────────────
+    if cancel_q:
+        return ("Cancellations and rescheduling need to go through our operations team since a partner may already be assigned. "
+                "Please use the support request form below, select 'Booking and Tracking' and choose 'Update booking details'. "
+                "Our team typically responds within 2 hours during office hours.")
+    if agent_q:
+        return ("You can reach a DTDC support executive at 1800-123-3339 (toll-free, 9 AM to 6 PM, Mon to Sat). "
+                "Outside those hours, submit a support request below and we'll call you back within the next business day.")
+    if not_received_q:
+        return ("Please select your shipment from the active orders above so I can check the actual status. "
+                "If the status genuinely shows 'Delivered' and you haven't received it, raise a support request below — our team investigates within 24 hours.")
+    if complaint_q:
+        return ("I'm sorry to hear that. For complaints about damage, delays, or missing parcels, please file a support request below "
+                "with your consignment number. Our team will investigate and respond within 24 hours.")
+    if charge_q:
+        return ("Shipping charges depend on parcel weight, dimensions, service type, and pickup location. "
+                "You can get an instant quote on the Book a Pickup screen before confirming. "
+                "If you have a concern about an existing charge, raise a support request below with your booking reference.")
+    if after_collect_q:
+        return ("Once your parcel is collected, DTDC assigns a consignment number within a few hours. "
+                "From that point you can track the journey under Track Shipment. "
+                "You'll move through: In Transit, then Out for Delivery, then Delivered. "
+                "Typical intercity transit is 2 to 5 business days depending on the route.")
+    if delivery_q:
+        return ("To track an incoming shipment, you'll need the consignment number from the sender. "
+                "Head to Track Shipment and enter that number. You'll see the current stage, the expected delivery window, "
+                "and each checkpoint the parcel has passed through. "
+                "If the sender hasn't shared the number yet, ask them to check their MyDTDC booking confirmation.")
     if loc_q:
-        return ("I can look up your order status right away. Please select one of your active orders above, "
-                "or enter your pickup booking ID or shipment consignment number in the reference field. "
-                "For the demo, try entering **PU4A8B2C1D**.")
+        return ("Please select one of your active orders above or enter a consignment / booking ID in the reference field above "
+                "so I can pull up the exact status for you.")
     return ("I'm here to help with your DTDC shipments and pickups. "
             "Could you share your booking or consignment number, or select an active order above?")
 
@@ -579,6 +628,36 @@ if st.session_state.app_role == "User":
                 city = address_c3.text_input("City", key="address_city", placeholder="City")
                 state = address_c4.text_input("State", key="address_state", placeholder="State")
                 pincode = address_c5.text_input("PIN code", key="address_pincode", placeholder="6 digits", max_chars=6)
+
+                # Inline pincode serviceability check
+                _pin_digits = "".join(c for c in pincode if c.isdigit())
+                if len(_pin_digits) == 6:
+                    _found, _svc, _pcity, _pstate, _nearest = _check_pincode(_pin_digits)
+                    if not _found:
+                        st.markdown(f"<div style='background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 14px;font-size:12px;color:#92400E'>⚠ Pincode <b>{_pin_digits}</b> not found in our directory. Double-check and try again.</div>", unsafe_allow_html=True)
+                    elif _svc:
+                        st.markdown(f"<div style='background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:8px 14px;font-size:12px;color:#065F46'>✓ <b>{_pin_digits}</b> — {_pcity}, {_pstate} · DTDC serviceable</div>", unsafe_allow_html=True)
+                    else:
+                        _drop_line = ""
+                        if _nearest:
+                            _drop_line = (
+                                f"<div style='margin-top:8px;background:#FFF7ED;border:1px solid #FED7AA;"
+                                f"border-radius:7px;padding:7px 12px;font-size:11.5px;color:#92400E'>"
+                                f"📍 <b>Nearest DTDC drop-off point:</b> {_nearest['city']} area "
+                                f"(pincode {_nearest['pin']}, ~{_nearest['km']} km away). "
+                                f"You can drop your parcel at the DTDC franchise there and they will forward it to the recipient. "
+                                f"DTDC will also SMS the recipient to self-collect from this hub."
+                                f"</div>"
+                            )
+                        st.markdown(
+                            f"<div style='background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;font-size:12px;color:#991B1B'>"
+                            f"✗ <b>{_pin_digits}</b> — {_pcity}, {_pstate} is not directly serviceable by DTDC doorstep pickup. "
+                            f"You still have options though."
+                            f"{_drop_line}"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+
                 st.markdown("**Person handing over the parcel**")
                 c_col1, c_col2 = st.columns(2)
                 collector_name = c_col1.text_input("Collector name", placeholder="Person who will hand over the parcel")
@@ -632,8 +711,18 @@ if st.session_state.app_role == "User":
                 pincode_digits = "".join(ch for ch in pincode if ch.isdigit())
                 address_parts = [house, road, area, city, state, pincode]
                 address = ", ".join(part.strip() for part in address_parts if part.strip())
+                _sub_found, _sub_svc, _, _, _sub_nearest = _check_pincode(pincode_digits) if len(pincode_digits) == 6 else (True, True, "", "", None)
                 if not name or len(digits) < 10 or not city or not state or len(pincode_digits) != 6 or not collector_name or len(collector_digits) < 10:
                     st.error("Enter your name and mobile, city, state, 6-digit PIN code, and the collector's name and valid mobile number.")
+                elif _sub_found and not _sub_svc:
+                    _n_hint = (
+                        f" Nearest DTDC drop-off: {_sub_nearest['city']} (PIN {_sub_nearest['pin']}, ~{_sub_nearest['km']} km away)."
+                        if _sub_nearest else ""
+                    )
+                    st.error(
+                        f"Pincode {pincode_digits} is not directly serviceable by DTDC. "
+                        f"You can drop the parcel at the nearest DTDC franchise and they will forward it.{_n_hint}"
+                    )
                 else:
                     saved_photo = photo or photo_upload
                     photo_data = None
@@ -887,15 +976,62 @@ L.polyline([[12.9490,77.5930],[12.9450,77.5940],[12.9400,77.5950],[12.9343,77.59
                             st.rerun()
                 elif st.session_state.get(cancelled_key) or status == "Cancelled":
                     st.markdown(f"<div style='background:#FEE2E2;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#991B1B;font-weight:600'>✖ Pickup cancelled. No partner will be assigned.</div>", unsafe_allow_html=True)
-                    # One-tap rebook after cancellation
-                    if st.button("🔄  Rebook this pickup", key=f"rebook_{bid}", use_container_width=True, type="primary"):
-                        # Pre-fill address fields from the cancelled booking
-                        for _fld, _val in [("address_house", p.get("house_number","")), ("address_road", p.get("road","")),
-                                           ("address_area", p.get("area","")), ("address_city", p.get("city","")),
-                                           ("address_state", p.get("state","")), ("address_pincode", p.get("pincode",""))]:
-                            st.session_state[_fld] = _val
-                        st.session_state.pending_nav = "Book a Pickup"
-                        st.rerun()
+
+                    # ── INLINE REBOOK PANEL ───────────────────────────────────
+                    rebook_open_key = f"rebook_open_{bid}"
+                    rebook_done_key = f"rebook_done_{bid}"
+
+                    if st.session_state.get(rebook_done_key):
+                        new_bid = st.session_state.get(f"rebook_new_id_{bid}", bid + "-R")
+                        st.markdown(f"<div style='background:#D1FAE5;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#065F46;font-weight:600'>✔ Pickup rebooked · Ref: {new_bid}</div>", unsafe_allow_html=True)
+
+                    elif not st.session_state.get(rebook_open_key):
+                        if st.button("🔄  Rebook this pickup", key=f"rebook_{bid}", use_container_width=True, type="primary"):
+                            st.session_state[rebook_open_key] = True
+                            st.rerun()
+
+                    else:
+                        # Inline panel — same address, just pick new date + slot
+                        st.markdown("""<div style='background:#F8FAFC;border:1.5px solid #CBD5E1;border-radius:12px;padding:16px 18px;margin-top:10px'>
+<div style='font-weight:700;font-size:14px;color:#1E293B;margin-bottom:4px'>📅  Reschedule your pickup</div>
+<div style='font-size:12px;color:#64748B;margin-bottom:12px'>Same address and parcel details — just choose a new slot.</div>
+</div>""", unsafe_allow_html=True)
+
+                        from datetime import date, timedelta
+                        _today = date.today()
+                        _date_opts = [((_today + timedelta(days=i)).strftime("%a, %d %b"), (_today + timedelta(days=i)).isoformat()) for i in range(1, 6)]
+                        _date_labels = [d[0] for d in _date_opts]
+                        _date_values = [d[1] for d in _date_opts]
+
+                        rb_col1, rb_col2 = st.columns(2)
+                        with rb_col1:
+                            rb_date_idx = st.selectbox("Pickup date", range(len(_date_labels)),
+                                                        format_func=lambda i: _date_labels[i],
+                                                        key=f"rb_date_{bid}")
+                        with rb_col2:
+                            rb_slot = st.selectbox("Time slot", ["9 AM – 12 PM", "12 PM – 3 PM", "3 PM – 6 PM"],
+                                                    key=f"rb_slot_{bid}")
+
+                        rb_c1, rb_c2 = st.columns(2)
+                        with rb_c1:
+                            if st.button("Confirm rebook", key=f"rb_confirm_{bid}", type="primary", use_container_width=True):
+                                import random, string
+                                new_id = bid + "-R" + "".join(random.choices(string.ascii_uppercase + string.digits, k=3))
+                                new_booking = dict(p)
+                                new_booking["booking_id"]   = new_id
+                                new_booking["pickup_date"]  = _date_values[rb_date_idx]
+                                new_booking["time_slot"]    = rb_slot
+                                new_booking["status"]       = "Pickup request received"
+                                new_booking["created_at"]   = str(_today)
+                                st.session_state.pickup_requests.append(new_booking)
+                                st.session_state[f"rebook_new_id_{bid}"] = new_id
+                                st.session_state[rebook_done_key] = True
+                                st.session_state[rebook_open_key] = False
+                                st.rerun()
+                        with rb_c2:
+                            if st.button("Cancel", key=f"rb_cancel_{bid}", use_container_width=True):
+                                st.session_state[rebook_open_key] = False
+                                st.rerun()
 
     # ── WALLET ────────────────────────────────────────────────────────────────
     elif selected == "Wallet":
